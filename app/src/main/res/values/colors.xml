@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sky_top">#FF2E6FB7</color>
+    <color name="sky_bottom">#FFA9D4F5</color>
+    <color name="ink">#FF0E2238</color>
+    <color name="ink_soft">#CC0E2238</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="hud_bg">#66000000</color>
+    <color name="accent">#FFE8533B</color>
+</resources>

@@ -1,0 +1,36 @@
+package app.letadlo
+
+import android.content.Context
+import app.letadlo.game.MapType
+
+/** Rekordy (nejdelší let) a nastavení uložené v telefonu. */
+object Records {
+    private const val PREFS = "letadlo"
+
+    private fun prefs(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun bestTime(c: Context, map: MapType): Float = prefs(c).getFloat("best_time_${map.name}", 0f)
+
+    fun bestDistance(c: Context, map: MapType): Float = prefs(c).getFloat("best_dist_${map.name}", 0f)
+
+    /** Uloží výsledek; vrátí true, pokud jde o nový rekord v délce letu. */
+    fun submit(c: Context, map: MapType, airTime: Float, distance: Float): Boolean {
+        if (airTime < 1f) return false
+        val p = prefs(c)
+        val e = p.edit()
+        var record = false
+        if (airTime > bestTime(c, map)) {
+            e.putFloat("best_time_${map.name}", airTime)
+            record = true
+        }
+        if (distance > bestDistance(c, map)) e.putFloat("best_dist_${map.name}", distance)
+        e.apply()
+        return record
+    }
+
+    fun invertPitch(c: Context): Boolean = prefs(c).getBoolean("invert_pitch", false)
+
+    fun setInvertPitch(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("invert_pitch", v).apply()
+    }
+}

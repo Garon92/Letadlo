@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Letadlo</string>
+    <string name="menu_subtitle">Letecký simulátor ovládaný jen náklonem telefonu</string>
+    <string name="menu_howto">Drž telefon na šířku jako volant. Natočení doleva/doprava = zatáčka, horní hrana k sobě = stoupání, od sebe = klesání. Ťuknutím na obrazovku během letu telefon znovu zkalibruješ.</string>
+    <string name="menu_pick_map">Vyber mapu</string>
+    <string name="invert_pitch">Obrátit výškovku</string>
+    <string name="map_mountains">Hory</string>
+    <string name="map_mountains_desc">Štíty, sníh a dlouhé údolí</string>
+    <string name="map_city">Město</string>
+    <string name="map_city_desc">Mrakodrapy, ulice a řeka</string>
+    <string name="map_countryside">Krajina</string>
+    <string name="map_countryside_desc">Pole, lesy a jezera</string>
+    <string name="crash_title">Havárie – let skončil</string>
+    <string name="again">Letět znovu</string>
+    <string name="menu">Menu</string>
+</resources>

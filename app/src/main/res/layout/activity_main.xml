@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_menu"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-black"
+            android:letterSpacing="0.04"
+            android:shadowColor="#66000000"
+            android:shadowDy="3"
+            android:shadowRadius="8"
+            android:text="✈ Letadlo"
+            android:textColor="@color/white"
+            android:textSize="44sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/menu_subtitle"
+            android:textColor="#F0FFFFFF"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/menu_pick_map"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/cardMountains"
+                style="@style/MapCard"
+                android:background="@drawable/card_mountains">
+
+                <TextView style="@style/MapEmoji" android:text="🏔️" />
+                <TextView style="@style/MapTitle" android:text="@string/map_mountains" />
+                <TextView style="@style/MapDesc" android:text="@string/map_mountains_desc" />
+                <TextView android:id="@+id/recordMountains" style="@style/MapRecord" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardCity"
+                style="@style/MapCard"
+                android:background="@drawable/card_city">
+
+                <TextView style="@style/MapEmoji" android:text="🏙️" />
+                <TextView style="@style/MapTitle" android:text="@string/map_city" />
+                <TextView style="@style/MapDesc" android:text="@string/map_city_desc" />
+                <TextView android:id="@+id/recordCity" style="@style/MapRecord" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/cardCountryside"
+                style="@style/MapCard"
+                android:background="@drawable/card_countryside">
+
+                <TextView style="@style/MapEmoji" android:text="🌾" />
+                <TextView style="@style/MapTitle" android:text="@string/map_countryside" />
+                <TextView style="@style/MapDesc" android:text="@string/map_countryside_desc" />
+                <TextView android:id="@+id/recordCountryside" style="@style/MapRecord" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/invertPitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:buttonTint="@color/white"
+            android:text="@string/invert_pitch"
+            android:textColor="@color/white"
+            android:textSize="15sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:maxWidth="640dp"
+            android:text="@string/menu_howto"
+            android:textColor="#E6FFFFFF"
+            android:textSize="13sp" />
+    </LinearLayout>
+</ScrollView>
