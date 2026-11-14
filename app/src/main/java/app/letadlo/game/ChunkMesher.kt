@@ -21,7 +21,7 @@ object ChunkMesher {
         terrain(c, 1),
         terrain(c, 2),
         trees(c.trees),
-        buildings(c.buildings, c.houses),
+        buildings(c.buildings, c.houses, c.turbines),
         clouds(c.clouds),
     )
 
@@ -93,21 +93,70 @@ object ChunkMesher {
     }
 
     fun addTree(mb: MeshBuilder, t: Tree) {
-        val trunkH = t.height * 0.3f
-        val tw = 0.25f + t.height * 0.02f
-        mb.box(t.x - tw, t.y, t.z - tw, t.x + tw, t.y + trunkH + 0.5f, t.z + tw, 0.36f, 0.25f, 0.16f, bottom = false)
-        if (t.conifer) {
-            mb.cone(t.x, t.y + trunkH, t.z, t.radius, t.height - trunkH, 6,
-                0.12f * t.shade, 0.29f * t.shade, 0.14f * t.shade)
+        val s = t.shade
+        when (t.kind) {
+            PropKind.ROCK -> {
+                mb.blob(t.x, t.y + t.height * 0.35f, t.z, t.radius, t.height * 0.55f, 5, 0.5f * s, 0.49f * s, 0.47f * s)
+                return
+            }
+            PropKind.BUSH -> {
+                mb.blob(t.x, t.y + t.height * 0.45f, t.z, t.radius, t.height * 0.55f, 5, 0.2f * s, 0.38f * s, 0.14f * s)
+                return
+            }
+            PropKind.COW -> {
+                val brown = s < 0.5f
+                val r = if (brown) 0.45f else 0.92f
+                val g = if (brown) 0.3f else 0.9f
+                val b = if (brown) 0.2f else 0.86f
+                mb.obox(t.x, t.y + 0.7f, t.z, 1.05f, 0.42f, 0.75f, t.yaw, r, g, b)
+                mb.obox(t.x, t.y + 1.1f, t.z, 0.32f, 0.24f, 0.42f, t.yaw, r * 0.6f, g * 0.6f, b * 0.6f, offAlong = 1.3f)
+                for (fa in floatArrayOf(-0.75f, 0.75f)) for (sd in floatArrayOf(-0.28f, 0.28f)) {
+                    mb.obox(t.x, t.y, t.z, 0.09f, 0.09f, 0.72f, t.yaw, 0.2f, 0.17f, 0.15f, offAlong = fa, offSide = sd)
+                }
+                return
+            }
+            PropKind.SHEEP -> {
+                mb.obox(t.x, t.y + 0.35f, t.z, 0.6f, 0.38f, 0.55f, t.yaw, 0.93f, 0.92f, 0.88f)
+                mb.obox(t.x, t.y + 0.6f, t.z, 0.2f, 0.16f, 0.3f, t.yaw, 0.15f, 0.14f, 0.14f, offAlong = 0.7f)
+                for (fa in floatArrayOf(-0.4f, 0.4f)) for (sd in floatArrayOf(-0.22f, 0.22f)) {
+                    mb.obox(t.x, t.y, t.z, 0.06f, 0.06f, 0.38f, t.yaw, 0.15f, 0.14f, 0.14f, offAlong = fa, offSide = sd)
+                }
+                return
+            }
+            else -> Unit
+        }
+        val birch = t.kind == PropKind.BIRCH
+        val trunkH = t.height * (if (birch) 0.45f else 0.3f)
+        val tw = (if (birch) 0.18f else 0.25f) + t.height * 0.02f
+        if (birch) {
+            mb.box(t.x - tw, t.y, t.z - tw, t.x + tw, t.y + trunkH + 0.5f, t.z + tw, 0.88f, 0.87f, 0.83f, bottom = false)
         } else {
-            val cr = t.radius
-            mb.blob(t.x, t.y + trunkH + cr * 0.75f, t.z, cr, cr * 1.05f, 6,
-                0.24f * t.shade, 0.44f * t.shade, 0.16f * t.shade)
+            mb.box(t.x - tw, t.y, t.z - tw, t.x + tw, t.y + trunkH + 0.5f, t.z + tw, 0.36f, 0.25f, 0.16f, bottom = false)
+        }
+        when (t.kind) {
+            PropKind.CONIFER -> mb.cone(t.x, t.y + trunkH, t.z, t.radius, t.height - trunkH, 6,
+                0.12f * s, 0.29f * s, 0.14f * s)
+            PropKind.BIRCH -> {
+                val cr = t.radius
+                mb.blob(t.x, t.y + trunkH + cr * 1.1f, t.z, cr, cr * 1.6f, 6, 0.42f * s, 0.6f * s, 0.22f * s)
+            }
+            else -> {
+                val cr = t.radius
+                mb.blob(t.x, t.y + trunkH + cr * 0.75f, t.z, cr, cr * 1.05f, 6, 0.24f * s, 0.44f * s, 0.16f * s)
+            }
         }
     }
 
-    fun buildings(list: List<Box>, houses: List<House> = emptyList()): MeshData {
-        val mb = MeshBuilder(list.size * 24 + houses.size * 34 + 4)
+    /** Věž a gondola elektrárny (lopatky se kreslí zvlášť, protože se točí). */
+    fun addTurbineTower(mb: MeshBuilder, t: Turbine) {
+        mb.cylinderY(t.x, t.y, t.z, 2.2f, t.y + t.hubHeight, 1.3f, 8, 0.92f, 0.92f, 0.92f)
+        val yaw = kotlin.math.atan2(World.TURBINE_DIR_Z, World.TURBINE_DIR_X)
+        mb.obox(t.x, t.y + t.hubHeight - 1.6f, t.z, 4.5f, 1.6f, 3.2f, yaw, 0.9f, 0.9f, 0.9f, offAlong = -1.5f)
+    }
+
+    fun buildings(list: List<Box>, houses: List<House> = emptyList(), turbines: List<Turbine> = emptyList()): MeshData {
+        val mb = MeshBuilder(list.size * 24 + houses.size * 34 + turbines.size * 60 + 4)
+        for (t in turbines) addTurbineTower(mb, t)
         for (b in list) {
             mb.box(
                 b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ,
@@ -128,7 +177,7 @@ object ChunkMesher {
         val y1 = h.y + h.wallH
         val y2 = y1 + h.roofH
         val o = 0.6f
-        mb.box(x0, y0, z0, x1, y1, z1, h.wr, h.wg, h.wb, bottom = false)
+        mb.box(x0, y0, z0, x1, y1, z1, h.wr, h.wg, h.wb, 0.75f, h.wr, h.wg, h.wb, bottom = false)
         if (h.ridgeAlongX) {
             mb.quad(x0 - o, y1, z1 + o, x1 + o, y1, z1 + o, x1 + o, y2, h.z, x0 - o, y2, h.z, h.rr, h.rg, h.rb)
             mb.quad(x1 + o, y1, z0 - o, x0 - o, y1, z0 - o, x0 - o, y2, h.z, x1 + o, y2, h.z, h.rr * 0.9f, h.rg * 0.9f, h.rb * 0.9f)

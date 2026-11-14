@@ -18,11 +18,25 @@ class Box(
     val windows: Boolean,
 )
 
+/** Druh drobného objektu v krajině. Kolize mají jen stromy a balvany. */
+enum class PropKind(val collides: Boolean) {
+    CONIFER(true), DECIDUOUS(true), BIRCH(true), BUSH(false), ROCK(true), COW(false), SHEEP(false),
+}
+
 class Tree(
     val x: Float, val y: Float, val z: Float,
     val height: Float, val radius: Float,
-    val conifer: Boolean, val shade: Float,
-)
+    val kind: PropKind, val shade: Float,
+    val yaw: Float = 0f,
+) {
+    val conifer: Boolean get() = kind == PropKind.CONIFER
+}
+
+/** Letadlo zaparkované u hangárů. Yaw: příď (-Z šablony) otočená pomocí Ry(yaw). */
+class ParkedAircraft(val type: AircraftType, val x: Float, val z: Float, val yaw: Float)
+
+/** Větrná elektrárna – věž s rotorem natočeným po větru. */
+class Turbine(val x: Float, val y: Float, val z: Float, val hubHeight: Float, val rotorRadius: Float, val phase: Float)
 
 /** Domek se sedlovou střechou (vesnice, předměstí). Hřeben vede podél X nebo Z. */
 class House(
@@ -37,7 +51,7 @@ class House(
 /** Jeden „chuchvalec" mraku (zploštělá koule). */
 class Cloud(val x: Float, val y: Float, val z: Float, val rx: Float, val ry: Float, val shade: Float)
 
-enum class ObstacleKind { BUILDING, TREE }
+enum class ObstacleKind { BUILDING, TREE, TURBINE }
 
 /** Vše, co je potřeba pro vykreslení a kolize jednoho čtverce mapy. */
 class ChunkContent(
@@ -53,6 +67,7 @@ class ChunkContent(
     val trees: List<Tree>,
     val houses: List<House>,
     val clouds: List<Cloud>,
+    val turbines: List<Turbine>,
 ) {
     fun h(i: Int, j: Int): Float = heights[j * World.VERTS + i]
 }
@@ -85,6 +100,9 @@ class World(val map: MapType) {
         const val VILLAGE_CELL = 2600f
 
         private const val TREE_GRID = 40f
+        /** Směr větru – rotory elektráren se na něj natáčejí. */
+        const val TURBINE_DIR_X = 0.8f
+        const val TURBINE_DIR_Z = 0.6f
         private const val TREES_PER_SIDE = 16 // CHUNK / TREE_GRID
 
         fun key(cx: Int, cz: Int): Long = (cx.toLong() shl 32) or (cz.toLong() and 0xffffffffL)
@@ -326,7 +344,10 @@ class World(val map: MapType) {
         placeVillages(cx, cz, houses)
         placeTrees(cx, cz, heights, normals, trees)
         placeClouds(cx, cz, clouds)
-        return ChunkContent(cx, cz, heights, normals, colors, buildings, trees, houses, clouds)
+        val turbines = ArrayList<Turbine>()
+        placeHerdsAndRocks(cx, cz, heights, normals, trees)
+        placeTurbines(cx, cz, heights, normals, turbines)
+        return ChunkContent(cx, cz, heights, normals, colors, buildings, trees, houses, clouds, turbines)
     }
 
     private fun localHeight(heights: FloatArray, cx: Int, cz: Int, x: Float, z: Float): Float {
@@ -364,14 +385,35 @@ class World(val map: MapType) {
                 if (ny < 0.72f) continue
                 val r2 = Noise.hash01(gx, gz, 4)
                 if (map == MapType.MOUNTAINS && h > 1080f + r2 * 120f) continue
-                val conifer = when (map) {
-                    MapType.MOUNTAINS -> true
-                    MapType.COUNTRYSIDE -> r2 < 0.3f
-                    MapType.CITY -> r2 < 0.4f
+                val forestEdge = f in 0.03f..0.3f
+                val kind = when {
+                    forestEdge && Noise.hash01(gx, gz, 7) < 0.35f -> PropKind.BUSH
+                    map == MapType.MOUNTAINS -> if (h < 700f && r2 < 0.12f) PropKind.BIRCH else PropKind.CONIFER
+                    map == MapType.COUNTRYSIDE -> when {
+                        r2 < 0.28f -> PropKind.CONIFER
+                        r2 < 0.48f -> PropKind.BIRCH
+                        else -> PropKind.DECIDUOUS
+                    }
+                    else -> when {
+                        r2 < 0.35f -> PropKind.CONIFER
+                        r2 < 0.5f -> PropKind.BIRCH
+                        else -> PropKind.DECIDUOUS
+                    }
                 }
-                val height = if (conifer) 12f + 10f * Noise.hash01(gx, gz, 5) else 9f + 7f * Noise.hash01(gx, gz, 5)
-                val radius = if (conifer) height * 0.27f else height * 0.36f
-                out.add(Tree(x, h - 0.5f, z, height, radius, conifer, 0.8f + 0.4f * Noise.hash01(gx, gz, 6)))
+                val hr = Noise.hash01(gx, gz, 5)
+                val height = when (kind) {
+                    PropKind.CONIFER -> 12f + 10f * hr
+                    PropKind.BIRCH -> 11f + 7f * hr
+                    PropKind.BUSH -> 2f + 2f * hr
+                    else -> 9f + 7f * hr
+                }
+                val radius = when (kind) {
+                    PropKind.CONIFER -> height * 0.27f
+                    PropKind.BIRCH -> height * 0.22f
+                    PropKind.BUSH -> height * 0.8f
+                    else -> height * 0.36f
+                }
+                out.add(Tree(x, h - 0.5f, z, height, radius, kind, 0.8f + 0.4f * Noise.hash01(gx, gz, 6)))
             }
         }
     }
@@ -443,7 +485,7 @@ class World(val map: MapType) {
                 val tx = minX + 15f + i * 30f + (Noise.hash01(bx * 4 + i, bz * 4 + j, 8) - 0.5f) * 10f
                 val tz = minZ + 15f + j * 30f + (Noise.hash01(bx * 4 + i, bz * 4 + j, 9) - 0.5f) * 10f
                 val th = 8f + 6f * Noise.hash01(bx * 4 + i, bz * 4 + j, 10)
-                trees.add(Tree(tx, ground - 0.5f, tz, th, th * 0.38f, false, 0.9f))
+                trees.add(Tree(tx, ground - 0.5f, tz, th, th * 0.38f, PropKind.DECIDUOUS, 0.9f))
             }
             return
         }
@@ -615,6 +657,76 @@ class World(val map: MapType) {
     private fun groundBase(x: Float, z: Float, r: Float): Float =
         min(min(groundHeight(x - r, z - r), groundHeight(x + r, z - r)), min(groundHeight(x - r, z + r), groundHeight(x + r, z + r)))
 
+    // ------------------------------------------------------------------ zvířata, balvany, elektrárny
+
+    private fun placeHerdsAndRocks(cx: Int, cz: Int, heights: FloatArray, normals: FloatArray, out: MutableList<Tree>) {
+        val x0 = cx * CHUNK
+        val z0 = cz * CHUNK
+        // balvany v horách
+        if (map == MapType.MOUNTAINS) {
+            for (k in 0 until 24) {
+                val x = x0 + Noise.hash01(cx * 64 + k, cz, 401) * CHUNK
+                val z = z0 + Noise.hash01(cx, cz * 64 + k, 402) * CHUNK
+                val h = localHeight(heights, cx, cz, x, z)
+                if (h < 500f || airportWeight(x, z) > 0f) continue
+                val s = 2.5f + 6f * Noise.hash01(cx * 64 + k, cz * 64 + k, 403)
+                out.add(Tree(x, h - s * 0.3f, z, s, s * 1.2f, PropKind.ROCK, 0.85f + 0.3f * Noise.hash01(k, cx + cz, 404)))
+            }
+        }
+        // stádo krav nebo ovcí na louce
+        if (map == MapType.CITY && distToCity(x0, z0) < CITY_ROAD_RADIUS + 1500f) return
+        val herdChance = when (map) {
+            MapType.COUNTRYSIDE -> 0.4f
+            MapType.MOUNTAINS -> 0.25f
+            MapType.CITY -> 0.2f
+        }
+        if (Noise.hash01(cx, cz, 410) >= herdChance) return
+        val hx = x0 + (0.2f + 0.6f * Noise.hash01(cx, cz, 411)) * CHUNK
+        val hz = z0 + (0.2f + 0.6f * Noise.hash01(cx, cz, 412)) * CHUNK
+        val hh = localHeight(heights, cx, cz, hx, hz)
+        if (hh < SEA_LEVEL + 3f || forestMask(hx, hz) > 0.1f || inVillage(hx, hz, 40f) || airportWeight(hx, hz) > 0f) return
+        if (map == MapType.MOUNTAINS && hh > 1100f) return
+        val sheep = map == MapType.MOUNTAINS || Noise.hash01(cx, cz, 413) < 0.35f
+        val n = if (sheep) 8 + (Noise.hash01(cx, cz, 414) * 8f).toInt() else 5 + (Noise.hash01(cx, cz, 414) * 6f).toInt()
+        for (k in 0 until n) {
+            val ax = hx + (Noise.hash01(cx * 31 + k, cz, 415) - 0.5f) * 70f
+            val az = hz + (Noise.hash01(cx, cz * 31 + k, 416) - 0.5f) * 70f
+            val ah = localHeight(heights, cx, cz, ax.coerceIn(x0, x0 + CHUNK - 0.1f), az.coerceIn(z0, z0 + CHUNK - 0.1f))
+            if (ah < SEA_LEVEL + 1f) continue
+            val shade = Noise.hash01(cx * 31 + k, cz * 31 + k, 417)
+            out.add(
+                Tree(
+                    ax, ah, az, if (sheep) 1.1f else 1.6f, 1f,
+                    if (sheep) PropKind.SHEEP else PropKind.COW, shade,
+                    yaw = Noise.hash01(k, cx * 7 + cz, 418) * 6.283f,
+                )
+            )
+        }
+    }
+
+    private fun placeTurbines(cx: Int, cz: Int, heights: FloatArray, normals: FloatArray, out: MutableList<Turbine>) {
+        if (map == MapType.MOUNTAINS) return
+        val x0 = cx * CHUNK
+        val z0 = cz * CHUNK
+        for (j in 0 until 2) for (i in 0 until 2) {
+            val gx = cx * 2 + i
+            val gz = cz * 2 + j
+            val x = x0 + (i + 0.3f + 0.4f * Noise.hash01(gx, gz, 420)) * (CHUNK / 2f)
+            val z = z0 + (j + 0.3f + 0.4f * Noise.hash01(gx, gz, 421)) * (CHUNK / 2f)
+            val farm = Noise.fbm(x / 4000f, z / 4000f, 2, 422)
+            if (farm < 0.28f) continue
+            if (abs(x) < 2500f && abs(z) < 4500f) continue
+            if (map == MapType.CITY && distToCity(x, z) < CITY_ROAD_RADIUS + 1200f) continue
+            if (forestMask(x, z) > 0.05f || inVillage(x, z, 150f)) continue
+            val h = localHeight(heights, cx, cz, x, z)
+            if (h < SEA_LEVEL + 5f) continue
+            val vi = ((x - x0) / CELL).toInt().coerceIn(0, CELLS)
+            val vj = ((z - z0) / CELL).toInt().coerceIn(0, CELLS)
+            if (normals[(vj * VERTS + vi) * 3 + 1] < 0.9f) continue
+            out.add(Turbine(x, h - 1f, z, 72f, 34f, Noise.hash01(gx, gz, 423) * 6.283f))
+        }
+    }
+
     // ------------------------------------------------------------------ mraky
 
     private fun placeClouds(cx: Int, cz: Int, out: MutableList<Cloud>) {
@@ -656,12 +768,32 @@ class World(val map: MapType) {
         )
     }
 
+    /** Letadla odstavená vedle hangárů (přídí k dráze). */
+    val parkedAircraft: List<ParkedAircraft> = listOf(
+        ParkedAircraft(AircraftType.AIRLINER, -125f, 720f, -1.5708f),
+        ParkedAircraft(AircraftType.FIGHTER, -95f, 575f, -1.5708f),
+        ParkedAircraft(AircraftType.BOMBER, -150f, 860f, -1.5708f),
+        ParkedAircraft(AircraftType.HELICOPTER, -75f, 135f, -1.5708f),
+    )
+
+    private val parkedBoxes: List<Box> = parkedAircraft.map { p ->
+        val (len, span, h) = when (p.type) {
+            AircraftType.AIRLINER -> Triple(20f, 17f, 11f)
+            AircraftType.BOMBER -> Triple(12f, 16f, 6f)
+            AircraftType.FIGHTER -> Triple(9f, 5f, 5f)
+            AircraftType.HELICOPTER -> Triple(6f, 5.5f, 4f)
+            AircraftType.SPORT -> Triple(4f, 5f, 3f)
+        }
+        // příď míří do +X, délka leží podél X
+        Box(p.x - len, airportHeight, p.z - span, p.x + len, airportHeight + h, p.z + span, 0f, 0f, 0f, false)
+    }
+
     /** Vrátí druh překážky, do které koule (x,y,z,r) narazila, jinak null. */
     fun hitObstacle(x: Float, y: Float, z: Float, r: Float): ObstacleKind? {
         // Nad nejvyššími možnými překážkami nemá smysl hledat.
         if (y - r > groundHeight(x, z) + 400f) return null
         if (abs(x) < 400f && abs(z) < 1300f) {
-            for (bld in airportBoxes) {
+            for (bld in airportBoxes + parkedBoxes) {
                 if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.maxY &&
                     z + r > bld.minZ && z - r < bld.maxZ
                 ) return ObstacleKind.BUILDING
@@ -683,7 +815,19 @@ class World(val map: MapType) {
                     y - r < h.y + h.wallH + h.roofH * 0.6f && y + r > h.y - 1f
                 ) return ObstacleKind.BUILDING
             }
+            for (tb in c.turbines) {
+                if (abs(x - tb.x) < 3f + r && abs(z - tb.z) < 3f + r && y - r < tb.y + tb.hubHeight) return ObstacleKind.TURBINE
+                val dy = y - (tb.y + tb.hubHeight)
+                val dx = x - tb.x
+                val dz = z - tb.z
+                val rr = tb.rotorRadius * 0.85f + r
+                // rotor stojí kolmo na vítr (osa podél TURBINE_DIR)
+                val along = dx * TURBINE_DIR_X + dz * TURBINE_DIR_Z
+                val side = -dx * TURBINE_DIR_Z + dz * TURBINE_DIR_X
+                if (abs(along) < 4f + r && side * side + dy * dy < rr * rr) return ObstacleKind.TURBINE
+            }
             for (t in c.trees) {
+                if (!t.kind.collides) continue
                 val tr = t.radius * 0.7f + r
                 if (abs(x - t.x) < tr && abs(z - t.z) < tr && y - r < t.y + t.height && y + r > t.y) {
                     return ObstacleKind.TREE

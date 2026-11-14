@@ -136,7 +136,7 @@ class WorldTest {
             val w = World(map)
             var z = World.RUNWAY_HALF_LENGTH
             while (z > -World.RUNWAY_HALF_LENGTH) {
-                assertEquals(null, w.hitObstacle(0f, w.airportHeight + 2f, z, FlightModel.PLANE_RADIUS))
+                assertEquals(null, w.hitObstacle(0f, w.airportHeight + 3f, z, AircraftType.AIRLINER.radius))
                 z -= 50f
             }
         }
@@ -151,7 +151,20 @@ class WorldTest {
         }
         assertTrue(m.terrainNear.indexCount > m.terrainFar.indexCount)
         assertTrue(m.buildings.indexCount > 0)
-        for (mesh in listOf(PlaneMesh.body(), PlaneMesh.propeller(), PlaneMesh.shadow(), PlaneMesh.ball())) {
+        val meshes = ArrayList<MeshData>()
+        for (t in AircraftType.entries) {
+            meshes += AircraftMeshes.body(t)
+            meshes += AircraftMeshes.cockpit(t)
+            meshes += AircraftMeshes.shadow(t)
+            meshes += AircraftMeshes.rotors(t).map { it.mesh }
+        }
+        meshes += AircraftMeshes.ball()
+        for (v in 0 until Life.CAR_VARIANTS) meshes += LifeMeshes.car(v)
+        for (v in 0 until Life.PERSON_VARIANTS) meshes += LifeMeshes.person(v)
+        meshes += LifeMeshes.boat(true)
+        meshes += LifeMeshes.boat(false)
+        meshes += LifeMeshes.turbineBlades(34f)
+        for (mesh in meshes) {
             assertTrue(mesh.indexCount > 0)
             for (i in 0 until mesh.indexCount) assertTrue(mesh.indices[i] in 0 until mesh.vertexCount)
         }

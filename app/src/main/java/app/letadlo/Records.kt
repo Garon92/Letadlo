@@ -1,6 +1,7 @@
 package app.letadlo
 
 import android.content.Context
+import app.letadlo.game.AircraftType
 import app.letadlo.game.MapType
 
 /** Rekordy (nejdelší let) a nastavení uložené v telefonu. */
@@ -32,6 +33,18 @@ object Records {
 
     fun setSound(c: Context, v: Boolean) {
         prefs(c).edit().putBoolean("sound", v).apply()
+    }
+
+    fun aircraft(c: Context): AircraftType = AircraftType.fromName(prefs(c).getString("aircraft", null))
+
+    fun setAircraft(c: Context, t: AircraftType) {
+        prefs(c).edit().putString("aircraft", t.name).apply()
+    }
+
+    fun cockpit(c: Context): Boolean = prefs(c).getBoolean("cockpit", false)
+
+    fun setCockpit(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("cockpit", v).apply()
     }
 
     fun invertPitch(c: Context): Boolean = prefs(c).getBoolean("invert_pitch", false)

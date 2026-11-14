@@ -3,18 +3,27 @@ package app.letadlo.gl
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
+import app.letadlo.game.Agent
+import app.letadlo.game.AircraftMeshes
+import app.letadlo.game.AircraftType
 import app.letadlo.game.ChunkMesher
 import app.letadlo.game.Controls
 import app.letadlo.game.CrashReason
+import app.letadlo.game.DynamicBatch
 import app.letadlo.game.FlightModel
 import app.letadlo.game.FlightPhase
+import app.letadlo.game.Life
+import app.letadlo.game.LifeMeshes
 import app.letadlo.game.MapType
 import app.letadlo.game.MeshBuilder
-import app.letadlo.game.PlaneMesh
+import app.letadlo.game.ParkedAircraft
+import app.letadlo.game.RotorSpec
 import app.letadlo.game.World
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
@@ -29,7 +38,7 @@ class HudState(
     val phase: FlightPhase,
     val airTime: Float,
     val hasTakenOff: Boolean,
-    val canRotate: Boolean,
+    val readyForTakeoff: Boolean,
     val calibrating: Boolean,
     val bankDeg: Float,
     val pitchDeg: Float,
@@ -37,15 +46,18 @@ class HudState(
 
 class FlightResult(
     val map: MapType,
+    val aircraft: AircraftType,
     val reason: CrashReason,
     val airTime: Float,
     val distance: Float,
     val maxAgl: Float,
     val tookOff: Boolean,
+    val victims: Int,
 )
 
 class GameRenderer(
     map: MapType,
+    val aircraft: AircraftType,
     private val controls: Controls,
     private val listener: Listener,
 ) : GLSurfaceView.Renderer {
@@ -57,30 +69,55 @@ class GameRenderer(
     }
 
     val world = World(map)
-    val flight = FlightModel(world)
+    val flight = FlightModel(world, aircraft)
+    private val life = Life(world)
+    private val batch = DynamicBatch()
+
+    /** Noc (měsíc, hvězdy, rozsvícená okna) – přepíná se tlačítkem. */
+    @Volatile var night = false
+
+    /** Pohled z kabiny místo pohledu zvenku. */
+    @Volatile var cockpit = false
 
     private val radius = if (map == MapType.MOUNTAINS) 7 else 6
     private val fogEnd = (radius - 0.8f) * World.CHUNK
     private val fogStart = fogEnd * 0.28f
     private val chunks = ChunkManager(world, radius)
-    private val fog = if (map == MapType.MOUNTAINS) floatArrayOf(0.72f, 0.81f, 0.91f) else floatArrayOf(0.76f, 0.85f, 0.93f)
-    private val sun = run {
-        val x = -0.42f; val y = 0.74f; val z = 0.52f
-        val l = sqrt(x * x + y * y + z * z)
-        floatArrayOf(x / l, y / l, z / l)
+    private val dayFog = if (map == MapType.MOUNTAINS) floatArrayOf(0.72f, 0.81f, 0.91f) else floatArrayOf(0.76f, 0.85f, 0.93f)
+    private val nightFog = floatArrayOf(0.045f, 0.06f, 0.1f)
+    private val sun = norm(-0.42f, 0.74f, 0.52f)
+    private val moon = norm(0.35f, 0.5f, -0.79f)
+    private val eye = AircraftMeshes.eye(aircraft)
+    private val camScale = when (aircraft) {
+        AircraftType.SPORT -> 1f
+        AircraftType.FIGHTER -> 1.35f
+        AircraftType.AIRLINER -> 2.7f
+        AircraftType.HELICOPTER -> 1.3f
+        AircraftType.BOMBER -> 2.3f
     }
+
+    // šablony pohyblivých věcí (CPU)
+    private val carT = Array(Life.CAR_VARIANTS) { LifeMeshes.car(it) }
+    private val personT = Array(Life.PERSON_VARIANTS) { LifeMeshes.person(it) }
+    private val boatT = arrayOf(LifeMeshes.boat(false), LifeMeshes.boat(true))
+    private val bladesT = LifeMeshes.turbineBlades(34f)
+    private val bladeYaw = atan2(World.TURBINE_DIR_X, World.TURBINE_DIR_Z)
 
     private lateinit var worldProg: GlProgram
     private lateinit var skyProg: GlProgram
-    private lateinit var planeBody: GpuMesh
-    private lateinit var propeller: GpuMesh
+    private lateinit var body: GpuMesh
+    private lateinit var rotors: List<Pair<RotorSpec, GpuMesh>>
+    private lateinit var cockpitMesh: GpuMesh
     private lateinit var shadow: GpuMesh
     private lateinit var ball: GpuMesh
     private lateinit var airport: GpuMesh
     private lateinit var water: GpuMesh
+    private lateinit var parked: List<Triple<ParkedAircraft, GpuMesh, List<Pair<RotorSpec, GpuMesh>>>>
+    private val dynamic = DynamicMesh()
     private var skyVao = 0
 
     private val proj = FloatArray(16)
+    private val projNear = FloatArray(16)
     private val view = FloatArray(16)
     private val viewProj = FloatArray(16)
     private val viewRot = FloatArray(16)
@@ -89,6 +126,9 @@ class GameRenderer(
     private val model = FloatArray(16)
     private val model2 = FloatArray(16)
     private val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    private val v4 = FloatArray(4)
+    private val v4b = FloatArray(4)
+    private val pose = FloatArray(5)
 
     private var camX = 0f
     private var camY = 0f
@@ -103,14 +143,22 @@ class GameRenderer(
     private var crashTime = 0f
     private var crashReported = false
     private var impactReported = false
+    private var victims = 0
+
+    private fun norm(x: Float, y: Float, z: Float): FloatArray {
+        val l = sqrt(x * x + y * y + z * z)
+        return floatArrayOf(x / l, y / l, z / l)
+    }
 
     /** Volat na GL vlákně (přes queueEvent). */
     fun restart() {
         flight.reset()
+        life.reset()
         chunks.loadNow(flight.x, flight.z, 1)
         crashTime = 0f
         crashReported = false
         impactReported = false
+        victims = 0
         camInit = false
     }
 
@@ -118,20 +166,26 @@ class GameRenderer(
         chunks.shutdown()
     }
 
+    private fun rotorMeshes(type: AircraftType) = AircraftMeshes.rotors(type).map { Pair(it, GpuMesh(it.mesh)) }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES30.glClearColor(fog[0], fog[1], fog[2], 1f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
         GLES30.glDisable(GLES30.GL_CULL_FACE)
+        GLES30.glFrontFace(GLES30.GL_CCW)
+        GLES30.glCullFace(GLES30.GL_BACK)
 
         worldProg = GlProgram(Shaders.WORLD_VS, Shaders.WORLD_FS)
         skyProg = GlProgram(Shaders.SKY_VS, Shaders.SKY_FS)
-        planeBody = GpuMesh(PlaneMesh.body())
-        propeller = GpuMesh(PlaneMesh.propeller())
-        shadow = GpuMesh(PlaneMesh.shadow())
-        ball = GpuMesh(PlaneMesh.ball())
+        body = GpuMesh(AircraftMeshes.body(aircraft))
+        rotors = rotorMeshes(aircraft)
+        cockpitMesh = GpuMesh(AircraftMeshes.cockpit(aircraft))
+        shadow = GpuMesh(AircraftMeshes.shadow(aircraft))
+        ball = GpuMesh(AircraftMeshes.ball())
         airport = GpuMesh(ChunkMesher.buildings(world.airportBoxes))
         water = GpuMesh(waterQuad(fogEnd + 1500f))
+        parked = world.parkedAircraft.map { Triple(it, GpuMesh(AircraftMeshes.body(it.type)), rotorMeshes(it.type)) }
+        dynamic.init()
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         skyVao = ids[0]
@@ -145,6 +199,7 @@ class GameRenderer(
         GLES30.glViewport(0, 0, width, height)
         val aspect = width.toFloat() / max(1, height)
         Matrix.perspectiveM(proj, 0, 52f, aspect, 1.5f, fogEnd + 800f)
+        Matrix.perspectiveM(projNear, 0, 62f, aspect, 0.05f, 120f)
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -163,22 +218,25 @@ class GameRenderer(
         if (flight.phase == FlightPhase.CRASHED) {
             if (!impactReported) {
                 impactReported = true
+                victims = life.explode(flight.x, flight.y, flight.z, aircraft.blastRadius)
                 listener.onImpact()
             }
             crashTime += dt
-            if (!crashReported && crashTime > 1.1f) {
+            if (!crashReported && crashTime > 1.4f) {
                 crashReported = true
                 listener.onCrash(
                     FlightResult(
-                        world.map, flight.crashReason ?: CrashReason.TERRAIN,
-                        flight.airTime, flight.distance, flight.maxAltitudeAgl, flight.hasTakenOff,
+                        world.map, aircraft, flight.crashReason ?: CrashReason.TERRAIN,
+                        flight.airTime, flight.distance, flight.maxAltitudeAgl, flight.hasTakenOff, victims,
                     )
                 )
             }
         }
 
         updateCamera(dt)
+        life.update(dt, camX, camZ)
         chunks.update(camX, camZ)
+        buildBatch()
         render()
 
         hudTimer += dt
@@ -192,7 +250,7 @@ class GameRenderer(
                     phase = flight.phase,
                     airTime = flight.airTime,
                     hasTakenOff = flight.hasTakenOff,
-                    canRotate = flight.speed >= FlightModel.ROTATE_SPEED,
+                    readyForTakeoff = flight.readyForTakeoff,
                     calibrating = controls.calibrating,
                     bankDeg = deg(flight.bank),
                     pitchDeg = deg(flight.pitch),
@@ -203,11 +261,45 @@ class GameRenderer(
 
     private fun deg(r: Float): Float = (r * 180.0 / PI).toFloat()
 
+    private fun planeModel(out: FloatArray) {
+        val f = flight
+        Matrix.setIdentityM(out, 0)
+        Matrix.translateM(out, 0, f.x, f.y, f.z)
+        Matrix.rotateM(out, 0, -deg(f.heading), 0f, 1f, 0f)
+        Matrix.rotateM(out, 0, deg(f.pitch), 1f, 0f, 0f)
+        Matrix.rotateM(out, 0, -deg(f.bank), 0f, 0f, 1f)
+    }
+
+    // ------------------------------------------------------------------ kamera
+
     private fun updateCamera(dt: Float) {
         val f = flight
+        val crashed = f.phase == FlightPhase.CRASHED
+        if (cockpit && !crashed) {
+            planeModel(model)
+            v4b[0] = eye[0]; v4b[1] = eye[1]; v4b[2] = eye[2]; v4b[3] = 1f
+            Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+            camX = v4[0]; camY = v4[1]; camZ = v4[2]
+            v4b[0] = 0f; v4b[1] = 0f; v4b[2] = -1f; v4b[3] = 0f
+            Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+            val lx = camX + v4[0]
+            val ly = camY + v4[1]
+            val lz = camZ + v4[2]
+            val hl = sqrt(v4[0] * v4[0] + v4[2] * v4[2])
+            if (hl > 0.05f) {
+                fwdX = v4[0] / hl
+                fwdZ = v4[2] / hl
+            }
+            v4b[0] = 0f; v4b[1] = 1f; v4b[2] = 0f; v4b[3] = 0f
+            Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+            Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, v4[0], v4[1], v4[2])
+            camInit = true
+            return
+        }
+
         val hx = sin(f.heading)
         val hz = -cos(f.heading)
-        val crashed = f.phase == FlightPhase.CRASHED
+        val s = camScale
         val tx: Float
         val ty: Float
         val tz: Float
@@ -216,7 +308,7 @@ class GameRenderer(
         val lz: Float
         if (crashed) {
             val ang = f.heading + PI.toFloat() + crashTime * 0.22f
-            val dist = 42f + min(crashTime, 4f) * 7f
+            val dist = (42f + min(crashTime, 4f) * 7f) * (0.6f + 0.4f * s)
             tx = f.x + sin(ang) * dist
             tz = f.z - cos(ang) * dist
             ty = f.y + 14f + min(crashTime, 4f) * 5f
@@ -224,13 +316,13 @@ class GameRenderer(
         } else {
             val cp = cos(f.pitch * 0.6f)
             val sp = sin(f.pitch * 0.6f)
-            val back = 19f
+            val back = 19f * s
             tx = f.x - hx * back * cp
             tz = f.z - hz * back * cp
-            ty = f.y + 5.5f - sp * back
-            val ahead = 30f
+            ty = f.y + 5.5f * s - sp * back
+            val ahead = 30f * s
             lx = f.x + hx * ahead * cos(f.pitch)
-            ly = f.y + 2f + sin(f.pitch) * ahead
+            ly = f.y + 2f * s + sin(f.pitch) * ahead
             lz = f.z + hz * ahead * cos(f.pitch)
         }
         if (!camInit) {
@@ -251,17 +343,100 @@ class GameRenderer(
             fwdX = dx / dl
             fwdZ = dz / dl
         }
-        // kamera se částečně naklání s letadlem
         val r = if (crashed) 0f else f.bank * 0.4f
         val rightX = -fwdZ
         val rightZ = fwdX
-        val upX = sin(r) * rightX
-        val upY = cos(r)
-        val upZ = sin(r) * rightZ
-        Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, upX, upY, upZ)
+        Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, sin(r) * rightX, cos(r), sin(r) * rightZ)
+    }
+
+    // ------------------------------------------------------------------ pohyblivé věci
+
+    private fun near(x: Float, z: Float, range: Float): Boolean {
+        val dx = x - camX
+        val dz = z - camZ
+        val d2 = dx * dx + dz * dz
+        if (d2 > range * range) return false
+        return d2 < 900f || dx * fwdX + dz * fwdZ > -40f
+    }
+
+    private fun buildBatch() {
+        batch.clear()
+        for (a in life.cars) {
+            if (a.active && near(a.x, a.z, 750f)) batch.add(carT[a.variant], a.x, a.y, a.z, a.yaw, a.pitch, a.roll)
+        }
+        for (a in life.people) {
+            if (!a.active || !near(a.x, a.z, 450f)) continue
+            val bob = if (a.state == Agent.NORMAL) abs(sin(a.walk)) * 0.06f else 0f
+            batch.add(personT[a.variant], a.x, a.y + bob, a.z, a.yaw, a.pitch, a.roll, 1.1f)
+        }
+        for (f in life.flocks) {
+            for (i in 0 until f.count) {
+                life.birdPose(f, i, pose)
+                if (!near(pose[0], pose[2], 1200f)) continue
+                if (f.gull) batch.addBird(pose[0], pose[1], pose[2], pose[3], pose[4], f.span, 0.93f, 0.93f, 0.9f)
+                else batch.addBird(pose[0], pose[1], pose[2], pose[3], pose[4], f.span, 0.2f, 0.17f, 0.15f)
+            }
+        }
+        for (b in life.boats) {
+            if (near(b.x, b.z, 1500f)) {
+                batch.add(boatT[if (b.sail) 1 else 0], b.x, World.SEA_LEVEL + sin(b.bob * 1.3f) * 0.08f, b.z,
+                    -b.heading, 0f, sin(b.bob) * 0.05f)
+            }
+        }
+        chunks.forEachLoaded { cx, cz ->
+            for (t in world.content(cx, cz).turbines) {
+                if (!near(t.x, t.z, 3500f)) continue
+                batch.add(
+                    bladesT, t.x + World.TURBINE_DIR_X * 4.5f, t.y + t.hubHeight, t.z + World.TURBINE_DIR_Z * 4.5f,
+                    bladeYaw, 0f, time * 1.3f + t.phase,
+                )
+            }
+        }
+        dynamic.upload(batch)
+    }
+
+    // ------------------------------------------------------------------ vykreslení
+
+    private fun setLighting(p: GlProgram) {
+        val n = night
+        val fog = if (n) nightFog else dayFog
+        val l = if (n) moon else sun
+        p.set("uSunDir", l[0], l[1], l[2])
+        p.set("uFogColor", fog[0], fog[1], fog[2])
+        p.set("uFog", fogStart, fogEnd)
+        p.set("uNight", if (n) 1f else 0f)
+        if (n) {
+            p.set("uLightColor", 0.16f, 0.19f, 0.27f)
+            p.set("uAmbSky", 0.06f, 0.075f, 0.12f)
+            p.set("uAmbGround", 0.025f, 0.03f, 0.045f)
+            p.set("uSkyColor", 0.05f, 0.07f, 0.12f)
+        } else {
+            p.set("uLightColor", 0.78f, 0.75f, 0.69f)
+            p.set("uAmbSky", 0.50f, 0.58f, 0.70f)
+            p.set("uAmbGround", 0.30f, 0.29f, 0.27f)
+            p.set("uSkyColor", 0.62f, 0.76f, 0.90f)
+        }
+        val f = flight
+        if (n && f.phase != FlightPhase.CRASHED) {
+            // přistávací světlo míří kousek pod osu letadla
+            planeModel(model2)
+            v4b[0] = 0f; v4b[1] = -0.5f; v4b[2] = -3f * camScale; v4b[3] = 1f
+            Matrix.multiplyMV(v4, 0, model2, 0, v4b, 0)
+            p.set("uSpot", v4[0], v4[1], v4[2], 1.8f)
+            v4b[0] = 0f; v4b[1] = -0.22f; v4b[2] = -1f; v4b[3] = 0f
+            Matrix.multiplyMV(v4, 0, model2, 0, v4b, 0)
+            val l2 = sqrt(v4[0] * v4[0] + v4[1] * v4[1] + v4[2] * v4[2])
+            p.set("uSpotDir", v4[0] / l2, v4[1] / l2, v4[2] / l2)
+        } else {
+            p.set("uSpot", 0f, 0f, 0f, 0f)
+            p.set("uSpotDir", 0f, -1f, 0f)
+        }
     }
 
     private fun render() {
+        val n = night
+        val fog = if (n) nightFog else dayFog
+        GLES30.glClearColor(fog[0], fog[1], fog[2], 1f)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
         Matrix.multiplyMM(viewProj, 0, proj, 0, view, 0)
 
@@ -274,8 +449,11 @@ class GameRenderer(
         GLES30.glDepthMask(false)
         skyProg.use()
         skyProg.setMatrix("uInvViewProj", invSky)
-        skyProg.set("uSunDir", sun[0], sun[1], sun[2])
+        val l = if (n) moon else sun
+        skyProg.set("uSunDir", l[0], l[1], l[2])
         skyProg.set("uFogColor", fog[0], fog[1], fog[2])
+        if (n) skyProg.set("uZenith", 0.008f, 0.015f, 0.045f) else skyProg.set("uZenith", 0.22f, 0.45f, 0.80f)
+        skyProg.set("uNight", if (n) 1f else 0f)
         GLES30.glBindVertexArray(skyVao)
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
@@ -286,10 +464,8 @@ class GameRenderer(
         p.use()
         p.setMatrix("uViewProj", viewProj)
         p.setMatrix("uModel", identity)
-        p.set("uSunDir", sun[0], sun[1], sun[2])
         p.set("uCamPos", camX, camY, camZ)
-        p.set("uFogColor", fog[0], fog[1], fog[2])
-        p.set("uFog", fogStart, fogEnd)
+        setLighting(p)
         p.set(
             "uRunway",
             -World.RUNWAY_HALF_WIDTH, -World.RUNWAY_HALF_LENGTH,
@@ -316,22 +492,28 @@ class GameRenderer(
         p.setMatrix("uModel", model)
         water.draw()
 
+        // odstavená letadla, auta, lidé, ptáci, lodě
+        p.set("uMode", Shaders.MODE_PLANE)
+        for ((pa, mesh, rot) in parked) {
+            val gy = world.airportHeight + pa.type.gearHeight
+            Matrix.setIdentityM(model, 0)
+            Matrix.translateM(model, 0, pa.x, gy, pa.z)
+            Matrix.rotateM(model, 0, deg(pa.yaw), 0f, 1f, 0f)
+            p.setMatrix("uModel", model)
+            mesh.draw()
+            drawRotors(p, rot, 0f)
+        }
+        p.setMatrix("uModel", identity)
+        dynamic.draw()
+
         val f = flight
         val crashed = f.phase == FlightPhase.CRASHED
-        if (!crashed || crashTime < 0.12f) {
-            p.set("uMode", Shaders.MODE_PLANE)
-            Matrix.setIdentityM(model, 0)
-            Matrix.translateM(model, 0, f.x, f.y, f.z)
-            Matrix.rotateM(model, 0, -deg(f.heading), 0f, 1f, 0f)
-            Matrix.rotateM(model, 0, deg(f.pitch), 1f, 0f, 0f)
-            Matrix.rotateM(model, 0, -deg(f.bank), 0f, 0f, 1f)
+        val inCockpit = cockpit && !crashed
+        if (!inCockpit && (!crashed || crashTime < 0.12f)) {
+            planeModel(model)
             p.setMatrix("uModel", model)
-            planeBody.draw()
-            System.arraycopy(model, 0, model2, 0, 16)
-            Matrix.translateM(model2, 0, 0f, 0.05f, -3.72f)
-            Matrix.rotateM(model2, 0, (f.propeller * 360f) % 360f, 0f, 0f, 1f)
-            p.setMatrix("uModel", model2)
-            propeller.draw()
+            body.draw()
+            drawRotors(p, rotors, f.propeller)
         }
 
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -347,7 +529,7 @@ class GameRenderer(
             Matrix.rotateM(model, 0, -deg(f.heading), 0f, 1f, 0f)
             p.setMatrix("uModel", model)
             p.set("uMode", Shaders.MODE_SHADOW)
-            p.set("uTint", 0f, 0f, 0f, 0.38f * (1f - agl / 220f))
+            p.set("uTint", 0f, 0f, 0f, 0.38f * (1f - agl / 220f) * if (n) 0.35f else 1f)
             GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL)
             GLES30.glPolygonOffset(-2f, -4f)
             shadow.draw()
@@ -358,33 +540,66 @@ class GameRenderer(
 
         GLES30.glDepthMask(true)
         GLES30.glDisable(GLES30.GL_BLEND)
+
+        if (inCockpit) drawCockpit(p)
         GLES30.glBindVertexArray(0)
+    }
+
+    private fun drawRotors(p: GlProgram, list: List<Pair<RotorSpec, GpuMesh>>, turns: Float) {
+        for ((spec, mesh) in list) {
+            System.arraycopy(model, 0, model2, 0, 16)
+            Matrix.translateM(model2, 0, spec.x, spec.y, spec.z)
+            when (spec.axis) {
+                'y' -> Matrix.rotateM(model2, 0, -90f, 1f, 0f, 0f)
+                'x' -> Matrix.rotateM(model2, 0, 90f, 0f, 1f, 0f)
+                else -> Unit
+            }
+            Matrix.rotateM(model2, 0, (turns * 360f * spec.speed) % 360f, 0f, 0f, 1f)
+            p.setMatrix("uModel", model2)
+            mesh.draw()
+        }
+    }
+
+    /** Pohled z kabiny: vlastní letadlo a palubní deska ve zvláštním průchodu s blízkou ořezovou rovinou. */
+    private fun drawCockpit(p: GlProgram) {
+        GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
+        Matrix.multiplyMM(viewProj, 0, projNear, 0, view, 0)
+        p.setMatrix("uViewProj", viewProj)
+        p.set("uMode", Shaders.MODE_PLANE)
+        planeModel(model)
+        p.setMatrix("uModel", model)
+        // zevnitř trupu nejsou vidět jeho vnitřní stěny, jen křídla a příď zvenku
+        GLES30.glEnable(GLES30.GL_CULL_FACE)
+        body.draw()
+        drawRotors(p, rotors, flight.propeller)
+        GLES30.glDisable(GLES30.GL_CULL_FACE)
+        p.setMatrix("uModel", model)
+        cockpitMesh.draw()
     }
 
     private fun drawExplosion(p: GlProgram) {
         val f = flight
         p.set("uMode", Shaders.MODE_EFFECT)
-        // ohnivá koule
         val t = crashTime
+        val s = 0.7f + 0.3f * camScale
         val grow = World.smoothstep(0f, 0.6f, t)
         val fireAlpha = 1f - World.smoothstep(0.4f, 1.8f, t)
         if (fireAlpha > 0.01f) {
-            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, 4f + 20f * grow)
+            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, (4f + 20f * grow) * s)
             p.set("uTint", 1f, 0.5f, 0.12f, fireAlpha * 0.85f)
             ball.draw()
-            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, 2f + 11f * grow)
+            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, (2f + 11f * grow) * s)
             p.set("uTint", 1f, 0.9f, 0.45f, fireAlpha)
             ball.draw()
         }
-        // kouř
         for (i in 0 until 6) {
             val st = t - i * 0.3f
             if (st <= 0f) continue
             val a = 0.5f * (1f - World.smoothstep(2.5f, 8f, st))
             if (a <= 0.01f) continue
             val drift = i * 2.3f
-            ballAt(p, f.x + sin(i * 2.1f) * drift, f.y + 4f + st * 7f + i * 2f, f.z + cos(i * 1.7f) * drift, 6f + st * 4.5f)
-            p.set("uTint", 0.22f, 0.21f, 0.2f, a)
+            ballAt(p, f.x + sin(i * 2.1f) * drift, f.y + 4f + st * 7f + i * 2f, f.z + cos(i * 1.7f) * drift, (6f + st * 4.5f) * s)
+            if (night) p.set("uTint", 0.12f, 0.1f, 0.09f, a) else p.set("uTint", 0.22f, 0.21f, 0.2f, a)
             ball.draw()
         }
     }

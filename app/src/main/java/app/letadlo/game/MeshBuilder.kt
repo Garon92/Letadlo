@@ -108,6 +108,144 @@ class MeshBuilder(initialVertices: Int = 256) {
         }
     }
 
+    /**
+     * Obecný šestistěn: rohy 0..3 dole a 4..7 nahoře v pořadí
+     * (x-,z-), (x+,z-), (x+,z+), (x-,z+) – v pravotočivém místním systému.
+     */
+    fun hexa8(
+        x0: Float, y0: Float, z0: Float, x1: Float, y1: Float, z1: Float,
+        x2: Float, y2: Float, z2: Float, x3: Float, y3: Float, z3: Float,
+        x4: Float, y4: Float, z4: Float, x5: Float, y5: Float, z5: Float,
+        x6: Float, y6: Float, z6: Float, x7: Float, y7: Float, z7: Float,
+        r: Float, g: Float, b: Float, a: Float = 1f,
+    ) {
+        quad(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, r * 0.8f, g * 0.8f, b * 0.8f, a)
+        quad(x4, y4, z4, x7, y7, z7, x6, y6, z6, x5, y5, z5, r, g, b, a)
+        quad(x0, y0, z0, x4, y4, z4, x5, y5, z5, x1, y1, z1, r, g, b, a)
+        quad(x3, y3, z3, x2, y2, z2, x6, y6, z6, x7, y7, z7, r, g, b, a)
+        quad(x0, y0, z0, x3, y3, z3, x7, y7, z7, x4, y4, z4, r, g, b, a)
+        quad(x1, y1, z1, x5, y5, z5, x6, y6, z6, x2, y2, z2, r, g, b, a)
+    }
+
+    /**
+     * Kvádr natočený kolem svislé osy. Délka leží ve směru [yaw]
+     * (yaw = 0 → +X, yaw = π/2 → +Z), spodní stěna ve výšce [y0].
+     */
+    fun obox(
+        cx: Float, y0: Float, cz: Float, halfLen: Float, halfWid: Float, height: Float, yaw: Float,
+        r: Float, g: Float, b: Float, a: Float = 1f, offAlong: Float = 0f, offSide: Float = 0f,
+    ) {
+        val fx = cos(yaw)
+        val fz = sin(yaw)
+        val sx = -fz
+        val sz = fx
+        val ox = cx + fx * offAlong + sx * offSide
+        val oz = cz + fz * offAlong + sz * offSide
+        val y1 = y0 + height
+        fun px(u: Float, w: Float) = ox + fx * u + sx * w
+        fun pz(u: Float, w: Float) = oz + fz * u + sz * w
+        hexa8(
+            px(-halfLen, -halfWid), y0, pz(-halfLen, -halfWid),
+            px(halfLen, -halfWid), y0, pz(halfLen, -halfWid),
+            px(halfLen, halfWid), y0, pz(halfLen, halfWid),
+            px(-halfLen, halfWid), y0, pz(-halfLen, halfWid),
+            px(-halfLen, -halfWid), y1, pz(-halfLen, -halfWid),
+            px(halfLen, -halfWid), y1, pz(halfLen, -halfWid),
+            px(halfLen, halfWid), y1, pz(halfLen, halfWid),
+            px(-halfLen, halfWid), y1, pz(-halfLen, halfWid),
+            r, g, b, a,
+        )
+    }
+
+    /** Svislý komolý válec (věž, stožár). */
+    fun cylinderY(cx: Float, y0: Float, cz: Float, r0: Float, y1: Float, r1: Float, sides: Int, r: Float, g: Float, b: Float) {
+        for (s in 0 until sides) {
+            val a0 = (s * 2.0 * Math.PI / sides).toFloat()
+            val a1 = ((s + 1) * 2.0 * Math.PI / sides).toFloat()
+            quad(
+                cx + cos(a1) * r0, y0, cz + sin(a1) * r0,
+                cx + cos(a0) * r0, y0, cz + sin(a0) * r0,
+                cx + cos(a0) * r1, y1, cz + sin(a0) * r1,
+                cx + cos(a1) * r1, y1, cz + sin(a1) * r1,
+                r, g, b,
+            )
+        }
+    }
+
+    /**
+     * Těleso „vytažené" podél osy Z přes stanice (z, pološířka, polovýška, střed y),
+     * eliptický průřez. Barvu určuje [color] (index segmentu, střední úhel průřezu).
+     */
+    fun loftZ(
+        stations: Array<FloatArray>, sides: Int, cx: Float = 0f,
+        capFront: Boolean = true, capBack: Boolean = true,
+        color: (seg: Int, angle: Float) -> FloatArray,
+    ) {
+        val off = (Math.PI / sides).toFloat()
+        for (s in 0 until stations.size - 1) {
+            val a = stations[s]
+            val b = stations[s + 1]
+            for (k in 0 until sides) {
+                val a0 = (2 * Math.PI * k / sides).toFloat() + off
+                val a1 = (2 * Math.PI * (k + 1) / sides).toFloat() + off
+                val c = color(s, (a0 + a1) * 0.5f)
+                quad(
+                    cx + cos(a0) * a[1], a[3] + sin(a0) * a[2], a[0],
+                    cx + cos(a1) * a[1], a[3] + sin(a1) * a[2], a[0],
+                    cx + cos(a1) * b[1], b[3] + sin(a1) * b[2], b[0],
+                    cx + cos(a0) * b[1], b[3] + sin(a0) * b[2], b[0],
+                    c[0], c[1], c[2], if (c.size > 3) c[3] else 1f,
+                )
+            }
+        }
+        if (capFront) {
+            val n = stations[0]
+            val c = color(-1, 0f)
+            for (k in 0 until sides) {
+                val a0 = (2 * Math.PI * k / sides).toFloat() + off
+                val a1 = (2 * Math.PI * (k + 1) / sides).toFloat() + off
+                triangle(
+                    cx + cos(a1) * n[1], n[3] + sin(a1) * n[2], n[0],
+                    cx + cos(a0) * n[1], n[3] + sin(a0) * n[2], n[0],
+                    cx, n[3], n[0] - 0.01f,
+                    c[0], c[1], c[2], if (c.size > 3) c[3] else 1f,
+                )
+            }
+        }
+        if (capBack) {
+            val t = stations[stations.size - 1]
+            val c = color(stations.size, 0f)
+            for (k in 0 until sides) {
+                val a0 = (2 * Math.PI * k / sides).toFloat() + off
+                val a1 = (2 * Math.PI * (k + 1) / sides).toFloat() + off
+                triangle(
+                    cx + cos(a0) * t[1], t[3] + sin(a0) * t[2], t[0],
+                    cx + cos(a1) * t[1], t[3] + sin(a1) * t[2], t[0],
+                    cx, t[3], t[0] + 0.01f,
+                    c[0], c[1], c[2], if (c.size > 3) c[3] else 1f,
+                )
+            }
+        }
+    }
+
+    /** List vrtule v rovině XY (osa otáčení Z), od poloměru r0 do r1 pod úhlem [angle]. */
+    fun bladeZ(angle: Float, r0: Float, r1: Float, chord: Float, thick: Float, r: Float, g: Float, b: Float, zc: Float = 0f) {
+        val dx = cos(angle); val dy = sin(angle)
+        val px = -dy; val py = dx
+        val hc = chord / 2f; val ht = thick / 2f
+        hexa8(
+            dx * r0 - px * hc, dy * r0 - py * hc, zc - ht,
+            dx * r1 - px * hc, dy * r1 - py * hc, zc - ht,
+            dx * r1 - px * hc, dy * r1 - py * hc, zc + ht,
+            dx * r0 - px * hc, dy * r0 - py * hc, zc + ht,
+            dx * r0 + px * hc, dy * r0 + py * hc, zc - ht,
+            dx * r1 + px * hc, dy * r1 + py * hc, zc - ht,
+            dx * r1 + px * hc, dy * r1 + py * hc, zc + ht,
+            dx * r0 + px * hc, dy * r0 + py * hc, zc + ht,
+            r, g, b,
+        )
+    }
+
     /** Hrubá „koule" – dvojitý jehlan (koruna listnáče, ohnivá koule). */
     fun blob(cx: Float, cy: Float, cz: Float, rx: Float, ry: Float, sides: Int, r: Float, g: Float, b: Float) {
         val top = cy + ry

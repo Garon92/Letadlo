@@ -171,6 +171,11 @@ class ChunkManager(private val world: World, private val radius: Int) {
         }
     }
 
+    /** Projde souřadnice všech načtených chunků. */
+    fun forEachLoaded(action: (cx: Int, cz: Int) -> Unit) {
+        for (c in loaded.values) action(c.cx, c.cz)
+    }
+
     fun shutdown() {
         executor.shutdownNow()
     }

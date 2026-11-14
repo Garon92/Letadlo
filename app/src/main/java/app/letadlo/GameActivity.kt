@@ -13,7 +13,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import app.letadlo.game.FlightModel
+import app.letadlo.game.AircraftType
 import app.letadlo.game.FlightPhase
 import app.letadlo.game.MapType
 import app.letadlo.gl.FlightResult
@@ -28,9 +28,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     companion object {
         const val EXTRA_MAP = "map"
+        const val EXTRA_AIRCRAFT = "aircraft"
     }
 
     private lateinit var map: MapType
+    private lateinit var aircraft: AircraftType
+    private lateinit var btnView: TextView
+    private lateinit var btnTime: TextView
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: GameRenderer
     private lateinit var tilt: TiltInput
@@ -51,6 +55,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         map = MapType.fromName(intent.getStringExtra(EXTRA_MAP))
+        aircraft = AircraftType.fromName(intent.getStringExtra(EXTRA_AIRCRAFT))
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_game)
         findViewById<View>(R.id.hudLayer).applySafeInsets()
@@ -58,7 +63,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
         tilt = TiltInput(this)
         tilt.invertPitch = Records.invertPitch(this)
-        if (Records.sound(this)) sound = EngineSound()
+        if (Records.sound(this)) sound = EngineSound(aircraft)
         if (!tilt.available) {
             Toast.makeText(this, "Tento telefon nemá senzor náklonu.", Toast.LENGTH_LONG).show()
         }
@@ -72,9 +77,22 @@ class GameActivity : Activity(), GameRenderer.Listener {
         crashReason = findViewById(R.id.crashReason)
         crashStats = findViewById(R.id.crashStats)
         crashRecord = findViewById(R.id.crashRecord)
-        findViewById<TextView>(R.id.hudMap).text = map.title
+        findViewById<TextView>(R.id.hudMap).text = "${map.title} · ${aircraft.title}"
 
-        renderer = GameRenderer(map, tilt, this)
+        renderer = GameRenderer(map, aircraft, tilt, this)
+        renderer.cockpit = Records.cockpit(this)
+        btnView = findViewById(R.id.btnView)
+        btnTime = findViewById(R.id.btnTime)
+        updateToggleIcons()
+        btnView.setOnClickListener {
+            renderer.cockpit = !renderer.cockpit
+            Records.setCockpit(this, renderer.cockpit)
+            updateToggleIcons()
+        }
+        btnTime.setOnClickListener {
+            renderer.night = !renderer.night
+            updateToggleIcons()
+        }
         glView = findViewById(R.id.glView)
         glView.setEGLContextClientVersion(3)
         glView.setEGLConfigChooser(DepthConfigChooser())
@@ -97,6 +115,12 @@ class GameActivity : Activity(), GameRenderer.Listener {
             glView.queueEvent { renderer.restart() }
         }
         findViewById<Button>(R.id.btnMenu).setOnClickListener { finish() }
+    }
+
+    /** Ikona ukazuje, co je právě zapnuté: ✈️ zvenku / 💺 z kabiny, ☀️ den / 🌙 noc. */
+    private fun updateToggleIcons() {
+        btnView.text = if (renderer.cockpit) "💺" else "✈️"
+        btnTime.text = if (renderer.night) "🌙" else "☀️"
     }
 
     override fun onResume() {
@@ -163,11 +187,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
             System.currentTimeMillis() < calibratedMessageUntil ->
                 if (s.calibrating) "Kalibruji… drž telefon v klidu" else "Zkalibrováno ✓"
             s.calibrating -> "Drž telefon v pohodlné poloze – kalibruji…"
-            s.phase == FlightPhase.ROLLING && s.canRotate && s.hasTakenOff -> "Přistání! Nakloň telefon k sobě a leť dál."
-            s.phase == FlightPhase.ROLLING && s.canRotate -> "Teď! Nakloň horní hranu telefonu k sobě ⤴"
+            s.phase == FlightPhase.ROLLING && s.readyForTakeoff && s.hasTakenOff -> "Přistání! Nakloň telefon k sobě a leť dál."
+            s.phase == FlightPhase.ROLLING && s.readyForTakeoff -> "Teď! Nakloň horní hranu telefonu k sobě ⤴"
+            s.phase == FlightPhase.ROLLING && aircraft.helicopter -> "Roztáčím rotor…"
             s.phase == FlightPhase.ROLLING && !s.hasTakenOff ->
-                String.format(Locale.ROOT, "Rozjezd… vzlet při %d km/h", (FlightModel.ROTATE_SPEED * 3.6f).toInt())
-            s.phase == FlightPhase.AIRBORNE && s.airTime < 6f -> "Letíš! Natáčením telefonu zatáčíš."
+                String.format(Locale.ROOT, "Rozjezd… vzlet při %d km/h", (aircraft.rotateSpeed * 3.6f).toInt())
+            s.phase == FlightPhase.AIRBORNE && s.airTime < 6f ->
+                if (aircraft.helicopter) "Letíš! K sobě = stoupání, od sebe = klesání." else "Letíš! Natáčením telefonu zatáčíš."
             else -> null
         }
         if (text == null) {

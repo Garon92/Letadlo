@@ -20,23 +20,49 @@ class FlightModelTest {
     }
 
     @Test
-    fun acceleratesOnRunwayAndTakesOffWhenPulledBack() {
-        for (map in MapType.entries) {
-            val f = FlightModel(World(map))
+    fun everyPlaneAcceleratesOnRunwayAndTakesOffWhenPulledBack() {
+        for (type in AircraftType.entries.filter { !it.helicopter }) for (map in MapType.entries) {
+            val f = FlightModel(World(map), type)
             var t = 0f
-            while (f.speed < FlightModel.ROTATE_SPEED && t < 30f) {
+            while (f.speed < type.rotateSpeed && t < 40f) {
                 f.update(dt, 0f, 0f)
                 t += dt
             }
-            assertEquals("$map: bez přitažení zůstává na zemi", FlightPhase.ROLLING, f.phase)
-            assertTrue("$map: rozjezd trvá příliš dlouho ($t s)", t < 15f)
-            assertTrue("$map: na dráze", f.world.onRunway(f.x, f.z))
+            assertEquals("$type/$map: bez přitažení zůstává na zemi", FlightPhase.ROLLING, f.phase)
+            assertTrue("$type/$map: rozjezd trvá příliš dlouho ($t s)", t < 25f)
+            assertTrue("$type/$map: stihne to na dráze (z=${f.z})", f.world.onRunway(f.x, f.z) && f.z > -600f)
 
-            run(f, 10f, 0f, 0.7f)
-            assertEquals("$map: po přitažení letí (${f.crashReason})", FlightPhase.AIRBORNE, f.phase)
-            assertTrue("$map: nastoupal (${f.altitudeAgl} m)", f.altitudeAgl > 40f)
+            run(f, 14f, 0f, 0.8f)
+            assertEquals("$type/$map: po přitažení letí (${f.crashReason})", FlightPhase.AIRBORNE, f.phase)
+            assertTrue("$type/$map: nastoupal (${f.altitudeAgl} m)", f.altitudeAgl > 40f)
             assertTrue(f.hasTakenOff)
         }
+    }
+
+    @Test
+    fun helicopterTakesOffVerticallyFliesAndLandsAnywhere() {
+        val w = World(MapType.COUNTRYSIDE)
+        val f = FlightModel(w, AircraftType.HELICOPTER)
+        run(f, 1f, 0f, 1f)
+        assertEquals("rotor se teprve roztáčí", FlightPhase.ROLLING, f.phase)
+        run(f, 2f, 0f, 0f)
+        assertTrue(f.readyForTakeoff)
+        val z0 = f.z
+        run(f, 3f, 0f, 1f)
+        assertEquals(FlightPhase.AIRBORNE, f.phase)
+        assertTrue("stoupá skoro svisle (${f.altitudeAgl} m, posun ${z0 - f.z} m)", f.altitudeAgl > 15f && z0 - f.z < 60f)
+        run(f, 15f, 0f, 0.3f)
+        assertTrue("letí dopředu (${f.speed})", f.speed > 30f)
+        // zpátky dolů – přistane mimo dráhu, pokud je tam rovina
+        f.placeInAir(4000f, w.groundHeight(4000f, 4000f) + 40f, 4000f, 0f, 0f)
+        var landed = false
+        var t = 0f
+        while (t < 30f && f.phase != FlightPhase.CRASHED) {
+            f.update(dt, 0f, -0.25f)
+            if (f.phase == FlightPhase.ROLLING) { landed = true; break }
+            t += dt
+        }
+        if (!w.isWater(f.x, f.z)) assertTrue("přistál (${f.crashReason})", landed)
     }
 
     @Test
@@ -44,7 +70,7 @@ class FlightModelTest {
         val f = FlightModel(World(MapType.COUNTRYSIDE))
         run(f, 2f, 0f, 1f)
         assertEquals(FlightPhase.ROLLING, f.phase)
-        assertTrue(f.speed < FlightModel.ROTATE_SPEED)
+        assertTrue(f.speed < AircraftType.SPORT.rotateSpeed)
     }
 
     @Test
@@ -98,7 +124,7 @@ class FlightModelTest {
         f.placeInAir(0f, 3000f, -8000f, 0f, 80f)
         run(f, 120f, 0f, 1f)
         assertEquals(FlightPhase.AIRBORNE, f.phase)
-        assertTrue("strop (${f.y})", f.y < FlightModel.CEILING + 200f)
+        assertTrue("strop (${f.y})", f.y < AircraftType.SPORT.ceiling + 200f)
     }
 
     @Test
@@ -142,7 +168,7 @@ class FlightModelTest {
     fun gentleTouchdownOnRunwayLands() {
         val w = World(MapType.COUNTRYSIDE)
         val f = FlightModel(w)
-        f.placeInAir(0f, w.airportHeight + FlightModel.GEAR_HEIGHT + 8f, 600f, 0f, 45f)
+        f.placeInAir(0f, w.airportHeight + f.gearHeight + 8f, 600f, 0f, 45f)
         var landed = false
         var t = 0f
         while (t < 8f && f.phase != FlightPhase.CRASHED) {

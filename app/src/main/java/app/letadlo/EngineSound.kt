@@ -3,6 +3,7 @@ package app.letadlo
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import app.letadlo.game.AircraftType
 import java.util.Random
 import kotlin.math.PI
 import kotlin.math.min
@@ -12,7 +13,10 @@ import kotlin.math.sin
  * Procedurální zvuk pístového motoru a větru. Žádné zvukové soubory –
  * vše se syntetizuje v reálném čase na vlastním vlákně.
  */
-class EngineSound {
+class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
+
+    private val jet = type == AircraftType.FIGHTER || type == AircraftType.AIRLINER
+    private val heli = type == AircraftType.HELICOPTER
 
     /** Rychlost letadla v m/s – určuje otáčky a sílu větru. */
     @Volatile var speed = 0f
@@ -86,6 +90,7 @@ class EngineSound {
         var windVol = 0.0
         var boom = 0.0
         var boomLp = 0.0
+        var roar = 0.0
         try {
             while (alive) {
                 if (boomRequested) {
@@ -94,7 +99,12 @@ class EngineSound {
                 }
                 val v = speed.toDouble()
                 val on = running
-                val targetF = if (on) 34.0 + v * 0.8 else 8.0
+                val tone = type.engineTone.toDouble()
+                val targetF = if (!on) 8.0 else when {
+                    jet -> 70.0 * tone + v * 0.45
+                    heli -> 28.0
+                    else -> (34.0 + v * 0.8) * tone
+                }
                 val targetV = if (on) 0.20 + min(v, 80.0) / 80.0 * 0.16 else 0.0
                 val targetWind = min(v, 110.0) / 110.0 * 0.22
                 for (i in buf.indices) {
@@ -107,9 +117,23 @@ class EngineSound {
                     if (chug >= 1.0) chug -= 1.0
                     val w = twoPi * phase
                     var s = 0.55 * sin(w) + 0.30 * sin(2 * w + 0.4) + 0.18 * sin(3 * w + 1.1) + 0.10 * sin(5 * w + 0.2)
-                    s *= 0.72 + 0.28 * sin(twoPi * chug)
                     wind = wind * 0.985 + (rnd.nextDouble() - 0.5) * 0.15
-                    var out = s * vol + wind * windVol * 3.0
+                    var out: Double
+                    if (jet) {
+                        // hvízdání turbíny + hukot výtoku
+                        roar = roar * 0.9 + (rnd.nextDouble() - 0.5) * 0.25
+                        s = 0.25 * sin(w * 9.0) + 0.15 * sin(w * 13.7) + 0.4 * sin(w)
+                        out = s * vol * 0.5 + roar * vol * 2.6 + wind * windVol * 3.0
+                    } else if (heli) {
+                        // údery listů rotoru
+                        roar = roar * 0.8 + (rnd.nextDouble() - 0.5) * 0.4
+                        val slap = 0.5 + 0.5 * sin(twoPi * chug * 0.9)
+                        val beat = slap * slap * slap * slap
+                        out = (roar * 2.2 + 0.5 * sin(w)) * vol * (0.25 + 1.4 * beat) + wind * windVol * 2.0
+                    } else {
+                        s *= 0.72 + 0.28 * sin(twoPi * chug)
+                        out = s * vol + wind * windVol * 3.0
+                    }
                     if (boom > 0.0003) {
                         boomLp = boomLp * 0.93 + (rnd.nextDouble() * 2.0 - 1.0) * 0.07
                         out += boomLp * boom * 4.0 + (rnd.nextDouble() * 2.0 - 1.0) * boom * boom * 0.35

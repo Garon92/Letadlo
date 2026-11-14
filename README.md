@@ -12,25 +12,41 @@ Na telefonu povol instalaci z neznámých zdrojů a APK otevři. Vyžaduje Andro
 
 ## Jak se hraje
 
-1. V menu vyber mapu: **Hory**, **Město** nebo **Krajina**.
+1. V menu vyber **letadlo** a pak **mapu** (Hory, Město nebo Krajina).
 2. Drž telefon na šířku v pohodlné poloze – první půlvteřinu se kalibruje „rovný let".
 3. Letadlo se samo rozjede po dráze. Až ukazatel napíše *„Teď!"*, nakloň horní hranu telefonu k sobě a vzlétneš.
+   Vrtulník nejdřív roztočí rotor a pak vzlétá svisle.
 4. Natáčení telefonu jako volantem (nebo náklon do strany) = zatáčka.
    Horní hrana k sobě = stoupání, od sebe = klesání.
 5. Ťuknutím na obrazovku telefon kdykoli znovu zkalibruješ.
-6. Náraz do země, hory, budovy, stromů nebo pád do vody let ukončí. Měkké dosednutí na dráhu je přistání – můžeš zase vzlétnout.
+6. Kulatá tlačítka vpravo: **✈️ / 💺** přepíná pohled zvenku a z kabiny, **☀️ / 🌙** den a noc.
+7. Náraz do země, hory, budovy, stromů, elektrárny nebo pád do vody let ukončí.
+   Měkké dosednutí na dráhu je přistání – můžeš zase vzlétnout. Vrtulník přistane na jakékoli rovině.
 
-V menu jde zapnout **Obrátit výškovku**, pokud ti víc sedí opačné ovládání.
+V menu jde zapnout **Obrátit výškovku** a vypnout **Zvuk motoru**.
+
+## Letadla
+
+| Letadlo | Vlastnosti |
+| --- | --- |
+| 🛩️ Sportovní | krátký rozjezd, klidné a snadné |
+| ⚡ Stíhačka | přes 600 km/h, ostré zatáčky, přídavné spalování |
+| ✈️ Dopravní | dlouhý rozjezd, pomalé zatáčky, dva motory pod křídly |
+| 🚁 Vrtulník | svislý vzlet, přistání kdekoli, náklon k sobě = stoupání |
+| 💣 Bombardér | čtyři vrtule, těžký a stabilní |
 
 ## Mapy
 
 | Mapa | Co v ní je |
 | --- | --- |
-| 🏔️ Hory | Dlouhé údolí od letiště, štíty přes 1 800 m se sněhem, jehličnaté lesy, horská jezera |
-| 🏙️ Město | Mrakodrapy v centru, síť ulic, parky a řeka protékající městem |
-| 🌾 Krajina | Pole, louky, lesy, jezera a zvlněné kopce |
+| 🏔️ Hory | Dlouhé údolí od letiště, štíty přes 1 800 m se sněhem, jehličnaté lesy, balvany, ovce |
+| 🏙️ Město | Mrakodrapy, ulice s auty a chodci, předměstí, parky a řeka s loďkami |
+| 🌾 Krajina | Pole, lesy, vesnice s kostelem, jezera s plachetnicemi, krávy, větrné elektrárny |
 
-Svět je procedurálně generovaný a nekonečný – můžeš letět kterýmkoli směrem.
+Všude létají hejna ptáků a plují mraky. V noci svítí okna, pouliční lampy, světla dráhy,
+světla aut i přistávací světlo letadla. Svět je procedurálně generovaný a nekonečný.
+
+Výbuch letadla rozhází auta a lidi v okolí.
 
 ## Technicky
 
