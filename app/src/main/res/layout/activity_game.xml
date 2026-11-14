@@ -149,19 +149,20 @@
             android:textSize="20sp" />
     </LinearLayout>
 
-    <TextView
+    <ImageView
         android:id="@+id/btnBack"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="54dp"
+        android:layout_height="54dp"
         android:layout_gravity="top|end"
         android:layout_marginTop="14dp"
         android:layout_marginEnd="154dp"
         android:background="@drawable/round_button"
+        android:clickable="true"
         android:contentDescription="@string/back_to_menu"
-        android:gravity="center"
-        android:text="↩"
-        android:textColor="@color/white"
-        android:textSize="22sp" />
+        android:focusable="true"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_back" />
 
     <app.letadlo.MiniMapView
         android:id="@+id/miniMap"
@@ -199,7 +200,7 @@
             android:textSize="26sp" />
     </LinearLayout>
 
-    <TextView
+    <ImageView
         android:id="@+id/btnFire"
         android:layout_width="78dp"
         android:layout_height="78dp"
@@ -207,10 +208,12 @@
         android:layout_marginStart="24dp"
         android:layout_marginBottom="124dp"
         android:background="@drawable/fire_button"
+        android:clickable="true"
         android:contentDescription="@string/fire"
-        android:gravity="center"
-        android:text="🚀"
-        android:textSize="32sp"
+        android:focusable="true"
+        android:padding="11dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_rocket"
         android:visibility="gone" />
 
     <app.letadlo.AttitudeView

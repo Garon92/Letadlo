@@ -10,6 +10,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -106,12 +107,12 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudObjective = findViewById(R.id.hudObjective)
         hudLow = findViewById(R.id.hudLow)
         hudPopup = findViewById(R.id.hudPopup)
-        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
-        val btnFire = findViewById<TextView>(R.id.btnFire)
+        findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        val btnFire = findViewById<ImageView>(R.id.btnFire)
         if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER) {
             btnFire.visibility = View.VISIBLE
             if (aircraft == AircraftType.BOMBER) {
-                btnFire.text = "💣"
+                btnFire.setImageResource(R.drawable.ic_bomb)
                 btnFire.contentDescription = "Shodit bombu"
             }
             // drž = střílí bez omezení
@@ -282,7 +283,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     override fun onWeapons(launches: Int, booms: Int) {
         sound?.let {
-            repeat(launches) { _ -> it.launch() }
+            repeat(launches) { _ -> if (aircraft == AircraftType.BOMBER) it.whistle() else it.launch() }
             repeat(booms) { _ -> it.boom() }
         }
     }

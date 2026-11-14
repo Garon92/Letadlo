@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Raketa šikmo vzhůru: bílé tělo, tmavé stabilizátory, oranžový plamen -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="45">
+        <path
+            android:fillColor="#FFFFB347"
+            android:pathData="M10.6,18.2L12,23.4L13.4,18.2Z" />
+        <path
+            android:fillColor="#FFFFE38A"
+            android:pathData="M11.3,18.2L12,21.2L12.7,18.2Z" />
+        <path
+            android:fillColor="#FFDDE3EA"
+            android:pathData="M9.4,13.2L6.2,17.6L6.2,19L9.4,17.4Z" />
+        <path
+            android:fillColor="#FFDDE3EA"
+            android:pathData="M14.6,13.2L17.8,17.6L17.8,19L14.6,17.4Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,0.8C13.7,2.4 14.6,4.6 14.6,7.2L14.6,18.2L9.4,18.2L9.4,7.2C9.4,4.6 10.3,2.4 12,0.8Z" />
+        <path
+            android:fillColor="#FFE8533B"
+            android:pathData="M12,0.8C13.2,1.9 14,3.3 14.4,5L9.6,5C10,3.3 10.8,1.9 12,0.8Z" />
+        <path
+            android:fillColor="#FF9AA6B2"
+            android:pathData="M9.4,10.6L14.6,10.6L14.6,11.6L9.4,11.6Z" />
+    </group>
+</vector>

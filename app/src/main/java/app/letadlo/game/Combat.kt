@@ -15,6 +15,7 @@ class Rocket(var x: Float, var y: Float, var z: Float, val vx: Float, val vy: Fl
 /** Volně padající bomba. */
 class Bomb(var x: Float, var y: Float, var z: Float, var vx: Float, var vy: Float, var vz: Float) {
     var age = 0f
+    var trail = 0f
 }
 
 enum class Weapon { NONE, ROCKETS, BOMBS }
@@ -215,6 +216,12 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
                     hit = true
                     break
                 }
+            }
+            b.trail += dt
+            while (b.trail > 0.06f) {
+                // kouřová stopa, ať je oblouk pádu dobře vidět
+                b.trail -= 0.06f
+                puffs.add(Puff(b.x, b.y, b.z, 1.6f, false, 1.8f, 0.3f))
             }
             if (hit) {
                 explosion(b.x, b.y, b.z, BOMB_BLAST)

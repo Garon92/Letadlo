@@ -56,6 +56,13 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         launchRequested = true
     }
 
+    @Volatile private var whistleRequested = false
+
+    /** Hvízdání padající bomby (klesající tón). */
+    fun whistle() {
+        whistleRequested = true
+    }
+
     /** Výbuch rakety (motor běží dál). */
     fun boom() {
         smallBoomRequested = true
@@ -105,6 +112,8 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         var boomLp = 0.0
         var roar = 0.0
         var hiss = 0.0
+        var whistle = 0.0
+        var whistlePhase = 0.0
         try {
             while (alive) {
                 if (boomRequested) {
@@ -118,6 +127,10 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
                 if (launchRequested) {
                     launchRequested = false
                     hiss = 1.0
+                }
+                if (whistleRequested) {
+                    whistleRequested = false
+                    whistle = 1.0
                 }
                 val v = speed.toDouble()
                 val on = running
@@ -155,6 +168,12 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
                     } else {
                         s *= 0.72 + 0.28 * sin(twoPi * chug)
                         out = s * vol + wind * windVol * 3.0
+                    }
+                    if (whistle > 0.002) {
+                        whistlePhase += (450.0 + 1000.0 * whistle) / rate
+                        if (whistlePhase >= 1.0) whistlePhase -= 1.0
+                        out += sin(twoPi * whistlePhase) * 0.14 * minOf(1.0, whistle * 4.0)
+                        whistle *= 0.99994
                     }
                     if (hiss > 0.001) {
                         out += (rnd.nextDouble() * 2.0 - 1.0) * hiss * 0.45

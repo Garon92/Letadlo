@@ -308,7 +308,7 @@ class GameRenderer(
         missions.update(dt, flight, combat)
         // širší zorné pole s rychlostí – pocit rychlosti
         val speedK = ((flight.speed - 60f) / 450f).coerceIn(0f, 1f)
-        val wantFov = 52f + 14f * speedK
+        val wantFov = if (viewMode == 2) 64f else 52f + 14f * speedK
         if (abs(wantFov - fov) > 0.05f) {
             fov += (wantFov - fov) * min(1f, dt * 2f)
             Matrix.perspectiveM(proj, 0, fov, aspect, 1.5f, fogEnd + 800f)
@@ -437,9 +437,10 @@ class GameRenderer(
         val f = flight
         val crashed = f.phase == FlightPhase.CRASHED
         if (viewMode == 2 && !crashed) {
-            bombView()
+            bombView(dt)
             return
         }
+        bombLookInit = false
         if (cockpit && !crashed) {
             planeModel(model)
             v4b[0] = eye[0]; v4b[1] = eye[1]; v4b[2] = eye[2]; v4b[3] = 1f
@@ -532,26 +533,59 @@ class GameRenderer(
         return 0.0035f * fast * (0.3f + 0.7f * low)
     }
 
-    /** Bombardér: kamera pod přídí míří šikmo dolů, aby bylo vidět, kam bomby padají. */
-    private fun bombView() {
-        planeModel(model)
-        v4b[0] = 0f; v4b[1] = -3.4f; v4b[2] = -8f; v4b[3] = 1f
-        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
-        camX = v4[0]; camY = v4[1]; camZ = v4[2]
-        v4b[0] = 0f; v4b[1] = -0.94f; v4b[2] = -0.34f; v4b[3] = 0f
-        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
-        val lx = camX + v4[0]
-        val ly = camY + v4[1]
-        val lz = camZ + v4[2]
-        val hl = sqrt(v4[0] * v4[0] + v4[2] * v4[2])
-        if (hl > 0.05f) {
-            fwdX = v4[0] / hl
-            fwdZ = v4[2] / hl
+    private val bombLook = FloatArray(3)
+    private var bombLookInit = false
+
+    /**
+     * Bombardér – pohled na bomby: stabilní kamera za letadlem a nad ním (bez náklonu)
+     * míří mezi letadlo a místo dopadu, takže je vidět letadlo, celý oblouk
+     * padajících bomb i kruh, kam dopadnou.
+     */
+    private fun bombView(dt: Float) {
+        val f = flight
+        val s = camScale
+        val hx = sin(f.heading)
+        val hz = -cos(f.heading)
+        val ix: Float
+        val iy: Float
+        val iz: Float
+        if (combat.predictBombImpact(f, impact)) {
+            ix = impact[0]; iy = impact[1]; iz = impact[2]
+        } else {
+            ix = f.x + hx * 600f; iz = f.z + hz * 600f; iy = world.surfaceHeight(ix, iz)
         }
-        v4b[0] = 0f; v4b[1] = 0.34f; v4b[2] = -0.94f; v4b[3] = 0f
-        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
-        Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, v4[0], v4[1], v4[2])
-        offX = camX - flight.x; offY = camY - flight.y; offZ = camZ - flight.z
+        val tlx = f.x + (ix - f.x) * 0.55f
+        val tly = f.y + (iy - f.y) * 0.55f
+        val tlz = f.z + (iz - f.z) * 0.55f
+        val k = 1f - exp(-dt * 3f)
+        if (!bombLookInit) {
+            bombLook[0] = tlx; bombLook[1] = tly; bombLook[2] = tlz
+            bombLookInit = true
+        } else {
+            // cíl pohledu se vyhlazuje relativně k letadlu (jinak by při rychlosti zaostával)
+            bombLook[0] += (tlx - bombLook[0]) * k
+            bombLook[1] += (tly - bombLook[1]) * k
+            bombLook[2] += (tlz - bombLook[2]) * k
+        }
+        val tx = f.x - hx * 45f * s
+        val ty = f.y + 40f * s
+        val tz = f.z - hz * 45f * s
+        offX += (tx - f.x - offX) * k
+        offY += (ty - f.y - offY) * k
+        offZ += (tz - f.z - offZ) * k
+        camX = f.x + offX
+        camY = f.y + offY
+        camZ = f.z + offZ
+        val minY = world.surfaceHeight(camX, camZ) + 5f
+        if (camY < minY) camY = minY
+        val dx = bombLook[0] - camX
+        val dz = bombLook[2] - camZ
+        val dl = sqrt(dx * dx + dz * dz)
+        if (dl > 0.01f) {
+            fwdX = dx / dl
+            fwdZ = dz / dl
+        }
+        Matrix.setLookAtM(view, 0, camX, camY, camZ, bombLook[0], bombLook[1], bombLook[2], 0f, 1f, 0f)
         camInit = true
     }
 
@@ -620,7 +654,7 @@ class GameRenderer(
         }
         for (bm in combat.bombs) {
             val v = sqrt(bm.vx * bm.vx + bm.vy * bm.vy + bm.vz * bm.vz).coerceAtLeast(1f)
-            batch.add(bombT, bm.x, bm.y, bm.z, Rot.yawFor(bm.vx, bm.vz), kotlin.math.asin((bm.vy / v).coerceIn(-1f, 1f)))
+            batch.add(bombT, bm.x, bm.y, bm.z, Rot.yawFor(bm.vx, bm.vz), kotlin.math.asin((bm.vy / v).coerceIn(-1f, 1f)), 0f, 2.2f)
         }
         for (pf in combat.puffs) {
             if (!near(pf.x, pf.z, 2500f)) continue
@@ -757,7 +791,7 @@ class GameRenderer(
         val f = flight
         val crashed = f.phase == FlightPhase.CRASHED
         val inCockpit = cockpit && !crashed
-        if (!inCockpit && !(viewMode == 2 && !crashed) && (!crashed || crashTime < 0.12f)) {
+        if (!inCockpit && (!crashed || crashTime < 0.12f)) {
             planeModel(model)
             p.setMatrix("uModel", model)
             body.draw()
