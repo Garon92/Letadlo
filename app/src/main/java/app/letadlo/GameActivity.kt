@@ -53,6 +53,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
         map = MapType.fromName(intent.getStringExtra(EXTRA_MAP))
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_game)
+        findViewById<View>(R.id.hudLayer).applySafeInsets()
         hideSystemBars()
 
         tilt = TiltInput(this)

@@ -107,6 +107,7 @@ class GameRenderer(
     /** Volat na GL vlákně (přes queueEvent). */
     fun restart() {
         flight.reset()
+        chunks.loadNow(flight.x, flight.z, 1)
         crashTime = 0f
         crashReported = false
         impactReported = false

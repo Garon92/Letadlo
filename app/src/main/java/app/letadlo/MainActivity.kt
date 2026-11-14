@@ -14,6 +14,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        findViewById<View>(R.id.menuContent).applySafeInsets()
 
         bind(R.id.cardMountains, MapType.MOUNTAINS)
         bind(R.id.cardCity, MapType.CITY)
