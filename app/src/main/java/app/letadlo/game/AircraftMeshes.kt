@@ -57,60 +57,48 @@ object AircraftMeshes {
 
     /** Poloha očí pilota v souřadnicích letadla. */
     fun eye(type: AircraftType): FloatArray = when (type) {
-        AircraftType.SPORT -> floatArrayOf(0f, 0.92f, -0.55f)
+        AircraftType.SPORT -> floatArrayOf(0f, 1.0f, -0.55f)
         AircraftType.FIGHTER -> floatArrayOf(0f, 1.18f, -3.55f)
         AircraftType.AIRLINER -> floatArrayOf(-0.55f, 0.95f, -16.6f)
         AircraftType.HELICOPTER -> floatArrayOf(-0.45f, 0.8f, -1.6f)
         AircraftType.BOMBER -> floatArrayOf(-0.5f, 1.55f, -6.7f)
     }
 
-    /** Vnitřek kabiny: palubní deska, budíky, rám okna, knipl. */
+    /**
+     * Vnitřek kabiny: jen nízká palubní deska se svítícími budíky.
+     * Horní hrana desky je ~24° pod osou pohledu, takže výhled dopředu zůstává volný.
+     */
     fun cockpit(type: AircraftType): MeshData {
         val e = eye(type)
         val mb = MeshBuilder(512)
-        val ex = e[0]; val ey = e[1]; val ez = e[2]
-        val (w, dist, panelDrop) = when (type) {
-            AircraftType.SPORT -> Triple(0.55f, 0.75f, 0.28f)
-            AircraftType.FIGHTER -> Triple(0.48f, 0.72f, 0.3f)
-            AircraftType.AIRLINER -> Triple(1.15f, 0.95f, 0.3f)
-            AircraftType.HELICOPTER -> Triple(0.9f, 0.85f, 0.55f)
-            AircraftType.BOMBER -> Triple(1.0f, 0.9f, 0.3f)
+        val ey = e[1]; val ez = e[2]
+        val (w, dist) = when (type) {
+            AircraftType.SPORT -> Pair(0.55f, 0.75f)
+            AircraftType.FIGHTER -> Pair(0.45f, 0.7f)
+            AircraftType.AIRLINER -> Pair(1.15f, 0.95f)
+            AircraftType.HELICOPTER -> Pair(0.9f, 0.85f)
+            AircraftType.BOMBER -> Pair(1.0f, 0.9f)
         }
-        // středem palubní desky je osa letadla (u dvoumístných kabin pilot sedí vlevo)
         val pz = ez - dist
-        val top = ey - panelDrop
-        mb.box(-w, top - 0.5f, pz - 0.18f, w, top, pz, 0.14f, 0.14f, 0.15f)
-        mb.box(-w - 0.02f, top, pz - 0.28f, w + 0.02f, top + 0.06f, pz + 0.04f, 0.07f, 0.07f, 0.08f)
-        // budíky – svítí
+        val top = ey - dist * if (type == AircraftType.HELICOPTER) 0.62f else 0.47f
+        // deska je nakloněná k pilotovi, aby budíky nebyly vidět z ostrého úhlu
+        mb.hexa8(
+            -w, top - 0.42f, pz - 0.2f, w, top - 0.42f, pz - 0.2f, w, top - 0.42f, pz + 0.05f, -w, top - 0.42f, pz + 0.05f,
+            -w, top, pz - 0.2f, w, top, pz - 0.2f, w, top, pz, -w, top, pz,
+            0.15f, 0.15f, 0.16f,
+        )
+        // tenká stříška nad budíky
+        mb.box(-w - 0.02f, top, pz - 0.24f, w + 0.02f, top + 0.025f, pz + 0.03f, 0.06f, 0.06f, 0.07f)
+        // budíky – svítí, s odstupem od desky (žádné problikávání)
         val cols = if (w > 0.8f) 8 else 5
         for (row in 0 until 2) for (c in 0 until cols) {
             val dx = -w * 0.8f + (2f * w * 0.8f) * c / (cols - 1)
-            val dy = top - 0.14f - row * 0.18f
+            val dy = top - 0.1f - row * 0.16f
             val green = (c + row) % 4 == 2
-            disc(mb, dx, dy, pz + 0.005f, 0.065f,
+            val zf = pz + 0.012f + (top - dy) * (0.05f / 0.42f)
+            disc(mb, dx, dy, zf, 0.055f,
                 if (green) 0.25f else 0.92f, if (green) 0.85f else 0.93f, if (green) 0.45f else 0.88f, 0.75f)
         }
-        // rám okna (sloupky a horní příčka)
-        val pillar = 0.05f
-        for (side in -1..1 step 2) {
-            val x0 = side * w
-            val x1 = side * w * 0.82f
-            mb.hexa8(
-                x0 - pillar, top, pz - 0.05f, x0 + pillar, top, pz - 0.05f, x0 + pillar, top, pz + 0.05f, x0 - pillar, top, pz + 0.05f,
-                x1 - pillar, ey + 0.48f, ez - dist * 0.35f, x1 + pillar, ey + 0.48f, ez - dist * 0.35f,
-                x1 + pillar, ey + 0.48f, ez - dist * 0.35f + 0.1f, x1 - pillar, ey + 0.48f, ez - dist * 0.35f + 0.1f,
-                0.08f, 0.08f, 0.09f,
-            )
-        }
-        mb.box(-w * 0.85f, ey + 0.46f, ez - dist * 0.4f, w * 0.85f, ey + 0.53f, ez - dist * 0.25f, 0.08f, 0.08f, 0.09f)
-        if (type == AircraftType.FIGHTER) {
-            // průhledový displej (HUD)
-            mb.quad(-0.12f, top + 0.08f, pz + 0.1f, 0.12f, top + 0.08f, pz + 0.1f, 0.12f, top + 0.3f, pz + 0.16f,
-                -0.12f, top + 0.3f, pz + 0.16f, 0.2f, 0.9f, 0.4f, 0.72f)
-        }
-        // knipl / beran před pilotem
-        mb.box(ex - 0.04f, ey - 0.95f, ez - 0.42f, ex + 0.04f, ey - 0.55f, ez - 0.36f, 0.12f, 0.12f, 0.13f)
-        mb.box(ex - 0.16f, ey - 0.58f, ez - 0.43f, ex + 0.16f, ey - 0.52f, ez - 0.35f, 0.12f, 0.12f, 0.13f)
         return mb.build()
     }
 
@@ -281,7 +269,7 @@ object AircraftMeshes {
         // kabina
         mb.hexa8(
             -0.50f, 0.62f, -1.6f, 0.50f, 0.62f, -1.6f, 0.50f, 0.62f, 0.6f, -0.50f, 0.62f, 0.6f,
-            -0.36f, 1.02f, -0.85f, 0.36f, 1.02f, -0.85f, 0.36f, 1.02f, 0.25f, -0.36f, 1.02f, 0.25f,
+            -0.36f, 1.2f, -0.85f, 0.36f, 1.2f, -0.85f, 0.36f, 1.2f, 0.25f, -0.36f, 1.2f, 0.25f,
             GLASS[0], GLASS[1], GLASS[2],
         )
         for (side in -1..1 step 2) {

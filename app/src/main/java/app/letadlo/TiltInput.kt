@@ -40,6 +40,18 @@ class TiltInput(private val activity: Activity) : SensorEventListener, Controls 
 
     @Volatile var invertPitch = false
 
+    /** Citlivost 0..10 – kolik stupňů náklonu znamená plnou výchylku. */
+    @Volatile var sensitivity = DEFAULT_SENSITIVITY
+
+    companion object {
+        const val DEFAULT_SENSITIVITY = 7
+
+        /** Náklon telefonu (°) pro plnou zatáčku při dané citlivosti. */
+        fun fullRollDeg(sens: Int): Float = 30f - sens.coerceIn(0, 10) * 2.2f
+
+        fun fullPitchDeg(sens: Int): Float = fullRollDeg(sens) * 0.85f
+    }
+
     private var gx = 0f
     private var gy = 9.81f
     private var gz = 0f
@@ -101,7 +113,8 @@ class TiltInput(private val activity: Activity) : SensorEventListener, Controls 
         val rollDeg = Math.toDegrees(asin((-gx / g).coerceIn(-1f, 1f)).toDouble()).toFloat()
         val pitchDeg = Math.toDegrees(atan2(gz, sqrt(gx * gx + gy * gy)).toDouble()).toFloat()
 
-        roll = shape(rollDeg, 32f)
+        val s = sensitivity
+        roll = shape(rollDeg, fullRollDeg(s))
         if (calibrating) {
             if (calibStart == 0L) calibStart = event.timestamp
             calibSum += pitchDeg
@@ -114,17 +127,17 @@ class TiltInput(private val activity: Activity) : SensorEventListener, Controls 
             return
         }
         // telefon víc „naležato" než při kalibraci = nos dolů
-        val p = -shape(pitchDeg - neutralPitch, 26f)
+        val p = -shape(pitchDeg - neutralPitch, fullPitchDeg(s))
         pitch = if (invertPitch) -p else p
     }
 
-    /** Mrtvá zóna + jemnější odezva kolem středu. */
+    /** Malá mrtvá zóna a téměř lineární odezva – už malý náklon něco udělá. */
     private fun shape(deg: Float, full: Float): Float {
-        val dead = 2.5f
+        val dead = 1.2f
         val a = abs(deg)
         if (a < dead) return 0f
         val v = ((a - dead) / (full - dead)).coerceIn(0f, 1f)
-        return sign(deg) * v * (0.55f + 0.45f * v)
+        return sign(deg) * v * (0.8f + 0.2f * v)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

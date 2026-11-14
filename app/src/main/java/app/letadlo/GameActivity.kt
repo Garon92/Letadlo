@@ -35,6 +35,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
     private lateinit var aircraft: AircraftType
     private lateinit var btnView: TextView
     private lateinit var btnTime: TextView
+    private lateinit var miniMap: MiniMapView
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: GameRenderer
     private lateinit var tilt: TiltInput
@@ -63,6 +64,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
         tilt = TiltInput(this)
         tilt.invertPitch = Records.invertPitch(this)
+        tilt.sensitivity = Records.sensitivity(this)
         if (Records.sound(this)) sound = EngineSound(aircraft)
         if (!tilt.available) {
             Toast.makeText(this, "Tento telefon nemá senzor náklonu.", Toast.LENGTH_LONG).show()
@@ -73,6 +75,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudTime = findViewById(R.id.hudTime)
         hint = findViewById(R.id.hint)
         attitude = findViewById(R.id.attitude)
+        miniMap = findViewById(R.id.miniMap)
         crashPanel = findViewById(R.id.crashPanel)
         crashReason = findViewById(R.id.crashReason)
         crashStats = findViewById(R.id.crashStats)
@@ -181,6 +184,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudAlt.text = String.format(Locale.ROOT, "výška %d m · nad zemí %d m", s.altitude, s.agl)
         hudTime.text = "let " + formatTime(s.airTime)
         attitude.set(s.bankDeg, s.pitchDeg)
+        miniMap.setPose(s.x, s.z, s.headingDeg)
 
         val text: String? = when {
             s.phase == FlightPhase.CRASHED -> null
@@ -206,6 +210,10 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     override fun onCrash(result: FlightResult) {
         runOnUiThread { showCrash(result) }
+    }
+
+    override fun onMinimap(pixels: IntArray, size: Int, centerX: Float, centerZ: Float, metersPerPixel: Float) {
+        runOnUiThread { miniMap.setImage(pixels, size, centerX, centerZ, metersPerPixel) }
     }
 
     override fun onImpact() {

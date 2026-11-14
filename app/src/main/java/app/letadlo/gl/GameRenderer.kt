@@ -42,6 +42,9 @@ class HudState(
     val calibrating: Boolean,
     val bankDeg: Float,
     val pitchDeg: Float,
+    val x: Float,
+    val z: Float,
+    val headingDeg: Float,
 )
 
 class FlightResult(
@@ -66,6 +69,7 @@ class GameRenderer(
         fun onHud(state: HudState)
         fun onCrash(result: FlightResult)
         fun onImpact()
+        fun onMinimap(pixels: IntArray, size: Int, centerX: Float, centerZ: Float, metersPerPixel: Float)
     }
 
     val world = World(map)
@@ -79,7 +83,7 @@ class GameRenderer(
     /** Pohled z kabiny místo pohledu zvenku. */
     @Volatile var cockpit = false
 
-    private val radius = if (map == MapType.MOUNTAINS) 7 else 6
+    private val radius = if (map == MapType.MOUNTAINS || aircraft == AircraftType.FIGHTER || aircraft == AircraftType.AIRLINER) 7 else 6
     private val fogEnd = (radius - 0.8f) * World.CHUNK
     private val fogStart = fogEnd * 0.28f
     private val chunks = ChunkManager(world, radius)
@@ -134,6 +138,13 @@ class GameRenderer(
     private var camY = 0f
     private var camZ = 0f
     private var camInit = false
+    // kamera zvenku se vyhlazuje relativně k letadlu, takže nezaostává ani ve 2000 km/h
+    private var offX = 0f
+    private var offY = 0f
+    private var offZ = 0f
+    private val rot = FloatArray(16)
+    private val rotT = FloatArray(16)
+    private val localView = FloatArray(16)
     private var fwdX = 0f
     private var fwdZ = -1f
 
@@ -254,9 +265,65 @@ class GameRenderer(
                     calibrating = controls.calibrating,
                     bankDeg = deg(flight.bank),
                     pitchDeg = deg(flight.pitch),
+                    x = flight.x,
+                    z = flight.z,
+                    headingDeg = deg(flight.heading),
                 )
             )
         }
+        mapTimer += dt
+        if (mapTimer > 0.4f) {
+            mapTimer = 0f
+            buildMinimap()
+        }
+    }
+
+    // ------------------------------------------------------------------ mapa
+
+    private var mapTimer = 1f
+    private val mapN = 72
+    private val mapRange = 3000f
+
+    /** Obraz okolí z už spočítaných chunků (barvy terénu, voda, vesnice, stín svahů). */
+    private fun buildMinimap() {
+        val px = IntArray(mapN * mapN)
+        val step = mapRange * 2f / mapN
+        val cx = flight.x
+        val cz = flight.z
+        for (j in 0 until mapN) for (i in 0 until mapN) {
+            val wx = cx + (i + 0.5f - mapN / 2f) * step
+            val wz = cz + (j + 0.5f - mapN / 2f) * step
+            val c = world.cachedContent(World.chunkOf(wx), World.chunkOf(wz))
+            if (c == null) {
+                px[j * mapN + i] = 0
+                continue
+            }
+            val li = ((wx - c.cx * World.CHUNK) / World.CELL + 0.5f).toInt().coerceIn(0, World.CELLS)
+            val lj = ((wz - c.cz * World.CHUNK) / World.CELL + 0.5f).toInt().coerceIn(0, World.CELLS)
+            val idx = lj * World.VERTS + li
+            val h = c.heights[idx]
+            var r: Float
+            var g: Float
+            var b: Float
+            if (h < World.SEA_LEVEL) {
+                r = 0.18f; g = 0.42f; b = 0.68f
+            } else {
+                r = c.colors[idx * 4]; g = c.colors[idx * 4 + 1]; b = c.colors[idx * 4 + 2]
+                if (c.colors[idx * 4 + 3] < 0.5f) { r = r * 0.6f + 0.3f; g = g * 0.6f + 0.25f; b = b * 0.6f + 0.08f }
+                if (world.inVillage(wx, wz, 0f)) { r = 0.78f; g = 0.42f; b = 0.32f }
+                // stínování svahů (světlo od severozápadu)
+                val nx = c.normals[idx * 3]
+                val ny = c.normals[idx * 3 + 1]
+                val nz = c.normals[idx * 3 + 2]
+                val shade = (0.55f + 0.6f * (-0.55f * nx + 0.7f * ny - 0.45f * nz)).coerceIn(0.45f, 1.25f)
+                r *= shade; g *= shade; b *= shade
+            }
+            px[j * mapN + i] = (0xFF shl 24) or
+                ((r * 255f).toInt().coerceIn(0, 255) shl 16) or
+                ((g * 255f).toInt().coerceIn(0, 255) shl 8) or
+                (b * 255f).toInt().coerceIn(0, 255)
+        }
+        listener.onMinimap(px, mapN, cx, cz, step)
     }
 
     private fun deg(r: Float): Float = (r * 180.0 / PI).toFloat()
@@ -293,6 +360,7 @@ class GameRenderer(
             v4b[0] = 0f; v4b[1] = 1f; v4b[2] = 0f; v4b[3] = 0f
             Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
             Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, v4[0], v4[1], v4[2])
+            offX = camX - f.x; offY = camY - f.y; offZ = camZ - f.z
             camInit = true
             return
         }
@@ -326,13 +394,16 @@ class GameRenderer(
             lz = f.z + hz * ahead * cos(f.pitch)
         }
         if (!camInit) {
-            camX = tx; camY = ty; camZ = tz
+            offX = tx - f.x; offY = ty - f.y; offZ = tz - f.z
             camInit = true
         }
         val k = 1f - exp(-dt * if (crashed) 1.5f else 5.5f)
-        camX += (tx - camX) * k
-        camY += (ty - camY) * k
-        camZ += (tz - camZ) * k
+        offX += (tx - f.x - offX) * k
+        offY += (ty - f.y - offY) * k
+        offZ += (tz - f.z - offZ) * k
+        camX = f.x + offX
+        camY = f.y + offY
+        camZ = f.z + offZ
         val minY = world.surfaceHeight(camX, camZ) + 2.5f
         if (camY < minY) camY = minY
 
@@ -563,17 +634,33 @@ class GameRenderer(
     /** Pohled z kabiny: vlastní letadlo a palubní deska ve zvláštním průchodu s blízkou ořezovou rovinou. */
     private fun drawCockpit(p: GlProgram) {
         GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
-        Matrix.multiplyMM(viewProj, 0, projNear, 0, view, 0)
+        // Vše v souřadnicích letadla: daleko od počátku světa by velká čísla
+        // způsobila chvění a problikávání budíků.
+        Matrix.setLookAtM(localView, 0, eye[0], eye[1], eye[2], eye[0], eye[1], eye[2] - 1f, 0f, 1f, 0f)
+        Matrix.multiplyMM(viewProj, 0, projNear, 0, localView, 0)
         p.setMatrix("uViewProj", viewProj)
+        p.set("uCamPos", eye[0], eye[1], eye[2])
+        // světlo převedené do souřadnic letadla
+        val f = flight
+        Matrix.setIdentityM(rot, 0)
+        Matrix.rotateM(rot, 0, -deg(f.heading), 0f, 1f, 0f)
+        Matrix.rotateM(rot, 0, deg(f.pitch), 1f, 0f, 0f)
+        Matrix.rotateM(rot, 0, -deg(f.bank), 0f, 0f, 1f)
+        Matrix.transposeM(rotT, 0, rot, 0)
+        val l = if (night) moon else sun
+        v4b[0] = l[0]; v4b[1] = l[1]; v4b[2] = l[2]; v4b[3] = 0f
+        Matrix.multiplyMV(v4, 0, rotT, 0, v4b, 0)
+        p.set("uSunDir", v4[0], v4[1], v4[2])
+        p.set("uSpot", 0f, 0f, 0f, 0f)
         p.set("uMode", Shaders.MODE_PLANE)
-        planeModel(model)
+        Matrix.setIdentityM(model, 0)
         p.setMatrix("uModel", model)
         // zevnitř trupu nejsou vidět jeho vnitřní stěny, jen křídla a příď zvenku
         GLES30.glEnable(GLES30.GL_CULL_FACE)
         body.draw()
-        drawRotors(p, rotors, flight.propeller)
+        drawRotors(p, rotors, f.propeller)
         GLES30.glDisable(GLES30.GL_CULL_FACE)
-        p.setMatrix("uModel", model)
+        p.setMatrix("uModel", identity)
         cockpitMesh.draw()
     }
 

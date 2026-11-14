@@ -8,7 +8,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 enum class FlightPhase { ROLLING, AIRBORNE, CRASHED }
 
@@ -35,8 +34,8 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         const val G = 9.81f
         const val ROLL_FRICTION = 0.25f
         const val HELI_SPIN_UP = 2.5f
-        const val HELI_CLIMB = 12f
-        const val HELI_SINK = 14f
+        const val HELI_CLIMB = 15f
+        const val HELI_SINK = 16f
 
         fun rad(deg: Float): Float = (deg * PI / 180.0).toFloat()
     }
@@ -45,6 +44,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     private val maxPitchUp = rad(type.maxPitchUpDeg)
     private val maxPitchDown = rad(type.maxPitchDownDeg)
     private val maxRotatePitch = rad(12f)
+    private val maxTurn = rad(type.maxTurnDeg)
 
     var x = 0f; private set
     var y = 0f; private set
@@ -182,8 +182,8 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         }
         pitch = approach(pitch, targetPitch, dt, type.pitchRate)
 
-        val turnRate = G * tan(bank) / max(speed, 25f) * type.turnFactor
-        heading += turnRate * dt
+        // rychlost otáčení úměrná náklonu – stejně ostrá odezva při každé rychlosti
+        heading += maxTurn * (bank / maxBank) * dt
         wrapHeading()
 
         // v zatáčce trochu víc odporu, ve stoupání ubývá rychlost, v klesání přibývá
@@ -238,8 +238,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         val targetSpeed = type.maxSpeed * World.smoothstep(2f, 25f, agl)
         speed = approach(speed, targetSpeed, dt, 0.35f)
 
-        val turnRate = (G * tan(bank) / max(speed, 12f) * type.turnFactor).coerceIn(-0.9f, 0.9f)
-        heading += turnRate * dt
+        heading += maxTurn * (bank / maxBank) * dt
         wrapHeading()
 
         // nos se při letu dopředu sklopí

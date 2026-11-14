@@ -85,12 +85,14 @@ class World(val map: MapType) {
         const val CHUNK = CELL * CELLS
 
         const val RUNWAY_HALF_WIDTH = 25f
-        const val RUNWAY_HALF_LENGTH = 1000f
-        const val START_Z = 930f
+        const val RUNWAY_HALF_LENGTH = 1500f
+        const val START_Z = 1430f
+        /** Volný koridor pro vzlet (bez stromů a vesnic). */
+        const val CORRIDOR_Z = 4500f
         const val SEA_LEVEL = 0f
 
         const val CITY_X = 900f
-        const val CITY_Z = -5200f
+        const val CITY_Z = -6200f
         const val CITY_RADIUS = 3200f
         const val CITY_HEIGHT = 30f
         const val BLOCK = 150f
@@ -137,7 +139,7 @@ class World(val map: MapType) {
 
     fun airportWeight(x: Float, z: Float): Float {
         val dx = max(abs(x) - 160f, 0f)
-        val dz = max(abs(z) - 1150f, 0f)
+        val dz = max(abs(z) - (RUNWAY_HALF_LENGTH + 150f), 0f)
         val d = sqrt(dx * dx + dz * dz)
         return 1f - smoothstep(0f, 700f, d)
     }
@@ -218,7 +220,7 @@ class World(val map: MapType) {
 
     fun forestMask(x: Float, z: Float): Float {
         if (airportWeight(x, z) > 0f) return 0f
-        if (abs(x) < 240f && abs(z) < 3500f) return 0f // volný koridor pro vzlet
+        if (abs(x) < 240f && abs(z) < CORRIDOR_Z) return 0f // volný koridor pro vzlet
         val f = Noise.fbm(x / 1400f, z / 1400f, 3, 91)
         return when (map) {
             MapType.MOUNTAINS -> smoothstep(-0.08f, 0.08f, f)
@@ -290,6 +292,9 @@ class World(val map: MapType) {
     }
 
     fun hasContent(cx: Int, cz: Int): Boolean = cache.containsKey(key(cx, cz))
+
+    /** Obsah chunku jen pokud už je spočítaný (nic negeneruje). */
+    fun cachedContent(cx: Int, cz: Int): ChunkContent? = cache[key(cx, cz)]
 
     /** Uvolní data chunků, které jsou dál než [radius] od středu. */
     fun evictFar(centerCx: Int, centerCz: Int, radius: Int) {
@@ -373,7 +378,7 @@ class World(val map: MapType) {
                 val chance = Noise.hash01(gx, gz, 3)
                 var f = forestMask(x, z) * 0.85f
                 if (map == MapType.COUNTRYSIDE && f < 0.05f && airportWeight(x, z) <= 0f &&
-                    !(abs(x) < 240f && abs(z) < 3500f)
+                    !(abs(x) < 240f && abs(z) < CORRIDOR_Z)
                 ) f = 0.025f
                 if (chance >= f) continue
                 if (inVillage(x, z, 18f)) continue
@@ -553,7 +558,7 @@ class World(val map: MapType) {
         val z = (vz + 0.25f + 0.5f * Noise.hash01(vx, vz, 203)) * VILLAGE_CELL
         val radius = 150f + 130f * Noise.hash01(vx, vz, 204)
         if (airportWeight(x, z) > 0f) return null
-        if (abs(x) < 400f + radius && abs(z) < 3500f) return null
+        if (abs(x) < 400f + radius && abs(z) < CORRIDOR_Z) return null
         if (map == MapType.CITY && distToCity(x, z) < CITY_ROAD_RADIUS + 600f + radius) return null
         if (map == MapType.CITY && abs(x - riverX(z)) < 250f + radius) return null
         val h = rawHeight(x, z)

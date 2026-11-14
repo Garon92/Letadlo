@@ -8,6 +8,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import app.letadlo.game.AircraftType
 import app.letadlo.game.MapType
@@ -57,6 +58,21 @@ class MainActivity : Activity() {
         invert.isChecked = Records.invertPitch(this)
         invert.setOnCheckedChangeListener { _, checked -> Records.setInvertPitch(this, checked) }
 
+        val sensLabel = findViewById<TextView>(R.id.sensitivityLabel)
+        val sens = findViewById<SeekBar>(R.id.sensitivity)
+        sens.max = 10
+        sens.progress = Records.sensitivity(this)
+        showSensitivity(sensLabel, sens.progress)
+        sens.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                Records.setSensitivity(this@MainActivity, value)
+                showSensitivity(sensLabel, value)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar) = Unit
+            override fun onStopTrackingTouch(bar: SeekBar) = Unit
+        })
+
         val sound = findViewById<CheckBox>(R.id.sound)
         sound.isChecked = Records.sound(this)
         sound.setOnCheckedChangeListener { _, checked -> Records.setSound(this, checked) }
@@ -67,6 +83,12 @@ class MainActivity : Activity() {
         showRecord(R.id.recordMountains, MapType.MOUNTAINS)
         showRecord(R.id.recordCity, MapType.CITY)
         showRecord(R.id.recordCountryside, MapType.COUNTRYSIDE)
+    }
+
+    private fun showSensitivity(label: TextView, value: Int) {
+        label.text = String.format(
+            Locale.ROOT, "Citlivost náklonu: %d  (plná zatáčka při %.0f°)", value, TiltInput.fullRollDeg(value),
+        )
     }
 
     private fun refreshChips() {

@@ -152,8 +152,8 @@ object Shaders {
             vec3 detailed = mix(base, glass, win);
             vec3 avg = mix(base, vec3(0.30, 0.38, 0.47), 0.32);
             if (uNight > 0.5) {
-                float lit = step(0.52, hash12(cell + 71.3));
-                emis += mix(win * lit, 0.16, far) * WARM * (0.75 + 0.5 * r);
+                float lit = step(0.45, hash12(cell + 71.3));
+                emis += mix(win * lit * 1.3, 0.24, far) * WARM * (0.75 + 0.5 * r);
             }
             return mix(detailed, avg, far);
         }
@@ -163,12 +163,13 @@ object Shaders {
             float u = abs(n.x) > abs(n.z) ? p.z : p.x;
             float wx = fract(u / 3.2);
             float wy = fract(p.y / 3.0);
-            float win = step(0.32, wx) * step(wx, 0.68) * step(0.38, wy) * step(wy, 0.72);
+            float win = step(0.25, wx) * step(wx, 0.75) * step(0.33, wy) * step(wy, 0.75);
             float far = smoothstep(250.0, 900.0, dist);
             vec2 cell = vec2(floor(u / 3.2), floor(p.y / 3.0)) + floor(p.xz * 0.05);
             if (uNight > 0.5) {
-                float lit = step(0.5, hash12(cell));
-                emis += mix(win * lit, 0.12, far) * WARM;
+                float lit = step(0.28, hash12(cell));
+                // okna svítí, celá stěna navíc slabě září od lamp a oken
+                emis += (mix(win * lit * 1.7, 0.42, far) + 0.06) * WARM;
             }
             return mix(base, vec3(0.18, 0.22, 0.28), win * (1.0 - far));
         }

@@ -1,6 +1,10 @@
 package app.letadlo.game
 
-/** Druhy letadel a jejich letové vlastnosti (arkádové, ne realistické tabulky). */
+/**
+ * Druhy letadel a jejich letové vlastnosti. Tah a odpor jsou nastavené tak,
+ * aby cestovní rychlosti odpovídaly skutečnosti a stoupání naplno šlo udržet
+ * s rezervou nad pádovou rychlostí.
+ */
 enum class AircraftType(
     val title: String,
     val emoji: String,
@@ -9,6 +13,7 @@ enum class AircraftType(
     val rotateSpeed: Float,
     val stallSpeed: Float,
     val groundThrust: Float,
+    /** Tah ve vzduchu (m/s²). Ustálená vodorovná rychlost = sqrt(thrust / drag). */
     val thrust: Float,
     val drag: Float,
     val minSpeed: Float,
@@ -20,9 +25,11 @@ enum class AircraftType(
     val maxBankDeg: Float,
     val maxPitchUpDeg: Float,
     val maxPitchDownDeg: Float,
+    /** Jak rychle se křídla naklopí do požadovaného náklonu (1/s). */
     val bankRate: Float,
     val pitchRate: Float,
-    val turnFactor: Float,
+    /** Rychlost otáčení kurzu při plném náklonu (°/s). */
+    val maxTurnDeg: Float,
     val ceiling: Float,
     /** Jak daleko výbuch rozhází auta a lidi. */
     val blastRadius: Float,
@@ -31,42 +38,42 @@ enum class AircraftType(
 ) {
     SPORT(
         "Sportovní", "🛩️", false,
-        rotateSpeed = 38f, stallSpeed = 30f, groundThrust = 6.5f, thrust = 9f, drag = 0.0016f,
-        minSpeed = 18f, maxSpeed = 140f, gearHeight = 1.6f, radius = 3f,
-        maxBankDeg = 62f, maxPitchUpDeg = 32f, maxPitchDownDeg = 35f,
-        bankRate = 2.6f, pitchRate = 2.0f, turnFactor = 1.35f, ceiling = 3500f,
+        rotateSpeed = 36f, stallSpeed = 28f, groundThrust = 6.5f, thrust = 9f, drag = 0.0013f,
+        minSpeed = 18f, maxSpeed = 120f, gearHeight = 1.6f, radius = 3f,
+        maxBankDeg = 65f, maxPitchUpDeg = 35f, maxPitchDownDeg = 40f,
+        bankRate = 4f, pitchRate = 3.2f, maxTurnDeg = 25f, ceiling = 3500f,
         blastRadius = 70f, engineTone = 1f,
     ),
     FIGHTER(
         "Stíhačka", "⚡", false,
-        rotateSpeed = 62f, stallSpeed = 50f, groundThrust = 15f, thrust = 26f, drag = 0.0009f,
-        minSpeed = 35f, maxSpeed = 290f, gearHeight = 2.15f, radius = 4f,
-        maxBankDeg = 80f, maxPitchUpDeg = 45f, maxPitchDownDeg = 45f,
-        bankRate = 4.0f, pitchRate = 3.0f, turnFactor = 1.8f, ceiling = 4500f,
+        rotateSpeed = 80f, stallSpeed = 62f, groundThrust = 18f, thrust = 30f, drag = 0.0000804f,
+        minSpeed = 50f, maxSpeed = 720f, gearHeight = 2.15f, radius = 4f,
+        maxBankDeg = 85f, maxPitchUpDeg = 50f, maxPitchDownDeg = 50f,
+        bankRate = 6f, pitchRate = 4.5f, maxTurnDeg = 30f, ceiling = 4500f,
         blastRadius = 95f, engineTone = 2.2f,
     ),
     AIRLINER(
         "Dopravní", "✈️", false,
-        rotateSpeed = 64f, stallSpeed = 52f, groundThrust = 4.8f, thrust = 9.5f, drag = 0.00075f,
-        minSpeed = 40f, maxSpeed = 200f, gearHeight = 3.45f, radius = 7f,
-        maxBankDeg = 35f, maxPitchUpDeg = 18f, maxPitchDownDeg = 20f,
-        bankRate = 1.1f, pitchRate = 0.9f, turnFactor = 1.4f, ceiling = 4000f,
+        rotateSpeed = 75f, stallSpeed = 60f, groundThrust = 4.4f, thrust = 4.5f, drag = 0.0000808f,
+        minSpeed = 45f, maxSpeed = 280f, gearHeight = 3.45f, radius = 7f,
+        maxBankDeg = 35f, maxPitchUpDeg = 20f, maxPitchDownDeg = 22f,
+        bankRate = 2f, pitchRate = 1.6f, maxTurnDeg = 9f, ceiling = 4000f,
         blastRadius = 150f, engineTone = 1.7f,
     ),
     HELICOPTER(
         "Vrtulník", "🚁", true,
         rotateSpeed = 0f, stallSpeed = 0f, groundThrust = 0f, thrust = 0f, drag = 0f,
-        minSpeed = 0f, maxSpeed = 50f, gearHeight = 1.75f, radius = 4.5f,
-        maxBankDeg = 30f, maxPitchUpDeg = 0f, maxPitchDownDeg = 0f,
-        bankRate = 2.0f, pitchRate = 2.0f, turnFactor = 1.6f, ceiling = 3000f,
+        minSpeed = 0f, maxSpeed = 75f, gearHeight = 1.75f, radius = 4.5f,
+        maxBankDeg = 35f, maxPitchUpDeg = 0f, maxPitchDownDeg = 0f,
+        bankRate = 4f, pitchRate = 3f, maxTurnDeg = 40f, ceiling = 3000f,
         blastRadius = 70f, engineTone = 0.75f,
     ),
     BOMBER(
         "Bombardér", "💣", false,
-        rotateSpeed = 56f, stallSpeed = 45f, groundThrust = 5.0f, thrust = 8.5f, drag = 0.00085f,
-        minSpeed = 35f, maxSpeed = 180f, gearHeight = 3.0f, radius = 7f,
-        maxBankDeg = 40f, maxPitchUpDeg = 22f, maxPitchDownDeg = 25f,
-        bankRate = 1.3f, pitchRate = 1.1f, turnFactor = 1.4f, ceiling = 4000f,
+        rotateSpeed = 50f, stallSpeed = 40f, groundThrust = 5f, thrust = 6.5f, drag = 0.000367f,
+        minSpeed = 32f, maxSpeed = 170f, gearHeight = 3.0f, radius = 7f,
+        maxBankDeg = 45f, maxPitchUpDeg = 25f, maxPitchDownDeg = 28f,
+        bankRate = 2.4f, pitchRate = 2f, maxTurnDeg = 12f, ceiling = 4000f,
         blastRadius = 170f, engineTone = 0.85f,
     );
 

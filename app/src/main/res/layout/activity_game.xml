@@ -19,6 +19,11 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_margin="14dp"
+        android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:background="@drawable/hud_pill"
         android:orientation="vertical"
         android:paddingStart="14dp"
@@ -45,10 +50,8 @@
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="14dp"
+        android:layout_marginTop="8dp"
         android:background="@drawable/hud_pill"
-        android:gravity="end"
         android:orientation="vertical"
         android:paddingStart="14dp"
         android:paddingTop="8dp"
@@ -70,13 +73,21 @@
             android:textColor="#E6FFFFFF"
             android:textSize="14sp" />
     </LinearLayout>
+    </LinearLayout>
+
+    <app.letadlo.MiniMapView
+        android:id="@+id/miniMap"
+        android:layout_width="128dp"
+        android:layout_height="128dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="14dp" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="14dp"
-        android:orientation="vertical">
+        android:layout_gravity="end|bottom"
+        android:layout_margin="14dp"
+        android:orientation="horizontal">
 
         <TextView
             android:id="@+id/btnView"
@@ -92,7 +103,7 @@
             android:id="@+id/btnTime"
             android:layout_width="62dp"
             android:layout_height="62dp"
-            android:layout_marginTop="14dp"
+            android:layout_marginStart="14dp"
             android:background="@drawable/round_button"
             android:contentDescription="@string/time_toggle"
             android:gravity="center"

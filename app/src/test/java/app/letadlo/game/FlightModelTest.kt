@@ -30,12 +30,58 @@ class FlightModelTest {
             }
             assertEquals("$type/$map: bez přitažení zůstává na zemi", FlightPhase.ROLLING, f.phase)
             assertTrue("$type/$map: rozjezd trvá příliš dlouho ($t s)", t < 25f)
-            assertTrue("$type/$map: stihne to na dráze (z=${f.z})", f.world.onRunway(f.x, f.z) && f.z > -600f)
+            assertTrue("$type/$map: zbývá aspoň 600 m dráhy (z=${f.z})", f.world.onRunway(f.x, f.z) && f.z > -World.RUNWAY_HALF_LENGTH + 600f)
 
             run(f, 14f, 0f, 0.8f)
             assertEquals("$type/$map: po přitažení letí (${f.crashReason})", FlightPhase.AIRBORNE, f.phase)
             assertTrue("$type/$map: nastoupal (${f.altitudeAgl} m)", f.altitudeAgl > 40f)
             assertTrue(f.hasTakenOff)
+        }
+    }
+
+    @Test
+    fun cruiseSpeedsAreRealistic() {
+        val minKmh = mapOf(
+            AircraftType.SPORT to 250f, AircraftType.FIGHTER to 2000f, AircraftType.AIRLINER to 750f,
+            AircraftType.HELICOPTER to 230f, AircraftType.BOMBER to 420f,
+        )
+        for (type in AircraftType.entries) {
+            val f = FlightModel(World(MapType.COUNTRYSIDE), type)
+            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.helicopter) 10f else type.rotateSpeed + 5f)
+            run(f, 120f, 0f, 0f)
+            val kmh = f.speed * 3.6f
+            assertTrue("$type letí $kmh km/h", kmh >= minKmh.getValue(type))
+        }
+    }
+
+    @Test
+    fun fullClimbAfterTakeoffNeverNearsStall() {
+        for (type in AircraftType.entries.filter { !it.helicopter }) {
+            val f = FlightModel(World(MapType.COUNTRYSIDE), type)
+            f.placeInAir(0f, 800f, -20000f, 0f, type.rotateSpeed + 2f)
+            var minSpeed = Float.MAX_VALUE
+            val y0 = f.y
+            var t = 0f
+            while (t < 40f) {
+                f.update(dt, 0f, 1f)
+                minSpeed = minOf(minSpeed, f.speed)
+                t += dt
+            }
+            assertEquals(FlightPhase.AIRBORNE, f.phase)
+            assertTrue("$type: drží rychlost ${minSpeed * 3.6f} km/h nad pádovou ${type.stallSpeed * 3.6f}",
+                minSpeed > type.stallSpeed + 7f)
+            assertTrue("$type: nastoupal ${f.y - y0} m", f.y - y0 > 600f)
+        }
+    }
+
+    @Test
+    fun smallBankAlreadyTurns() {
+        for (type in AircraftType.entries) {
+            val f = FlightModel(World(MapType.COUNTRYSIDE), type)
+            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.helicopter) 60f else type.rotateSpeed * 2f)
+            run(f, 3f, 0.3f, 0f)
+            val degPerS = Math.toDegrees(f.heading.toDouble()) / 3.0
+            assertTrue("$type: třetinová výchylka točí ${"%.1f".format(degPerS)} °/s", degPerS > type.maxTurnDeg * 0.15)
         }
     }
 

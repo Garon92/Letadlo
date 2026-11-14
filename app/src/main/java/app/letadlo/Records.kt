@@ -47,6 +47,12 @@ object Records {
         prefs(c).edit().putBoolean("cockpit", v).apply()
     }
 
+    fun sensitivity(c: Context): Int = prefs(c).getInt("sensitivity", TiltInput.DEFAULT_SENSITIVITY)
+
+    fun setSensitivity(c: Context, v: Int) {
+        prefs(c).edit().putInt("sensitivity", v).apply()
+    }
+
     fun invertPitch(c: Context): Boolean = prefs(c).getBoolean("invert_pitch", false)
 
     fun setInvertPitch(c: Context, v: Boolean) {

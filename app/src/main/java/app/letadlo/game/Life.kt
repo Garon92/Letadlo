@@ -59,8 +59,8 @@ class Boat(var x: Float, var z: Float, var heading: Float, val speed: Float, val
 class Life(private val world: World, seed: Long = 7L) {
 
     companion object {
-        const val MAX_CARS = 70
-        const val MAX_PEOPLE = 110
+        const val MAX_CARS = 220
+        const val MAX_PEOPLE = 280
         const val MAX_FLOCKS = 7
         const val MAX_BOATS = 6
         const val CAR_VARIANTS = 7
@@ -106,7 +106,7 @@ class Life(private val world: World, seed: Long = 7L) {
         val city = cityNear(camX, camZ)
         for (a in list) {
             if (!a.active) {
-                if (spawns < 4 && (city || !a.car)) {
+                if (spawns < 14 && (city || !a.car)) {
                     spawns++
                     if (a.car) spawnCar(a, camX, camZ) else spawnPerson(a, camX, camZ, city)
                 }
