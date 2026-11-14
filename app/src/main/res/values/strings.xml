@@ -8,6 +8,7 @@
     <string name="view_toggle">Přepnout pohled z kabiny / zvenku</string>
     <string name="time_toggle">Přepnout den / noc</string>
     <string name="fire">Palba raket</string>
+    <string name="back_to_menu">Zpět do menu</string>
     <string name="invert_pitch">Obrátit výškovku</string>
     <string name="sound">Zvuk motoru</string>
     <string name="map_mountains">Hory</string>

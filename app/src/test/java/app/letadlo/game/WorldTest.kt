@@ -164,6 +164,14 @@ class WorldTest {
         meshes += LifeMeshes.boat(true)
         meshes += LifeMeshes.boat(false)
         meshes += LifeMeshes.turbineBlades(34f)
+        meshes += LifeMeshes.ring()
+        meshes += LifeMeshes.diamond()
+        meshes += LifeMeshes.helipad()
+        meshes += LifeMeshes.rocket()
+        meshes += LifeMeshes.bomb()
+        for (st in intArrayOf(TargetStyle.RADAR, TargetStyle.FUEL, TargetStyle.TANK, TargetStyle.FACTORY, TargetStyle.BALLOON)) {
+            meshes += LifeMeshes.target(st)
+        }
         for (mesh in meshes) {
             assertTrue(mesh.indexCount > 0)
             for (i in 0 until mesh.indexCount) assertTrue(mesh.indices[i] in 0 until mesh.vertexCount)

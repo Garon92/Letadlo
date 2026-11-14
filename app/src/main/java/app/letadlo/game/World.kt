@@ -946,6 +946,22 @@ class World(val map: MapType) {
         return DamageReport(chunks, fires, anything)
     }
 
+    /** Výška rovné střechy budovy (nebo hangáru) pod bodem, jinak null. */
+    fun roofTop(x: Float, z: Float): Float? {
+        var best: Float? = null
+        if (abs(x) < 400f && abs(z) < 1300f) {
+            for (b in airportBoxes) if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ) best = max(best ?: b.top, b.top)
+        }
+        if (!hasCity) return best
+        for (cz in chunkOf(z - BLOCK - 10f)..chunkOf(z)) for (cx in chunkOf(x - BLOCK - 10f)..chunkOf(x)) {
+            val c = cachedContent(cx, cz) ?: continue
+            for (b in c.buildings) {
+                if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ) best = max(best ?: b.top, b.top)
+            }
+        }
+        return best
+    }
+
     /** Nejvyšší bod terénu i staveb pod (x,z) – pro kameru a stín. */
     fun surfaceHeight(x: Float, z: Float): Float = max(groundHeight(x, z), SEA_LEVEL)
 

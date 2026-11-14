@@ -9,6 +9,7 @@ object Shaders {
     const val MODE_SHADOW = 4
     const val MODE_EFFECT = 5
     const val MODE_DECAL = 6
+    const val MODE_GLOW = 7
 
     val WORLD_VS = """
         #version 300 es
@@ -187,6 +188,11 @@ object Shaders {
             }
             if (uMode == 5) {
                 fragColor = vec4(applyFog(vColor.rgb * uTint.rgb, dist), uTint.a);
+                return;
+            }
+            if (uMode == 7) {
+                // zářící prvky misí – bez mlhy, aby byly vidět i zdálky
+                fragColor = vec4(vColor.rgb * uTint.rgb, uTint.a);
                 return;
             }
             if (uMode == 6) {

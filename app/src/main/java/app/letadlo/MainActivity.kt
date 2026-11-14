@@ -41,6 +41,7 @@ class MainActivity : Activity() {
                     selected = t
                     Records.setAircraft(this@MainActivity, t)
                     refreshChips()
+                    refreshRecords()
                 }
             }
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -80,6 +81,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        refreshRecords()
+    }
+
+    private fun refreshRecords() {
         showRecord(R.id.recordMountains, MapType.MOUNTAINS)
         showRecord(R.id.recordCity, MapType.CITY)
         showRecord(R.id.recordCountryside, MapType.COUNTRYSIDE)
@@ -110,13 +115,11 @@ class MainActivity : Activity() {
     }
 
     private fun showRecord(id: Int, map: MapType) {
-        val t = Records.bestTime(this, map)
-        val d = Records.bestDistance(this, map)
-        findViewById<TextView>(id).text = if (t <= 0f) {
-            "zatím bez letu"
+        val best = Records.bestScore(this, map, selected)
+        findViewById<TextView>(id).text = if (best <= 0) {
+            "${selected.emoji} zatím bez skóre"
         } else {
-            val s = t.toInt()
-            String.format(Locale.ROOT, "rekord %d:%02d · %.1f km", s / 60, s % 60, d / 1000f)
+            String.format(Locale.ROOT, "${selected.emoji} rekord %,d", best).replace(',', ' ')
         }
     }
 }

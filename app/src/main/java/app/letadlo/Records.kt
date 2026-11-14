@@ -35,6 +35,15 @@ object Records {
         prefs(c).edit().putBoolean("sound", v).apply()
     }
 
+    fun bestScore(c: Context, map: MapType, a: AircraftType): Int = prefs(c).getInt("score_${map.name}_${a.name}", 0)
+
+    /** Uloží skóre; vrátí true, pokud je to nový rekord pro mapu a letadlo. */
+    fun submitScore(c: Context, map: MapType, a: AircraftType, score: Int): Boolean {
+        if (score <= bestScore(c, map, a)) return false
+        prefs(c).edit().putInt("score_${map.name}_${a.name}", score).apply()
+        return true
+    }
+
     fun aircraft(c: Context): AircraftType = AircraftType.fromName(prefs(c).getString("aircraft", null))
 
     fun setAircraft(c: Context, t: AircraftType) {

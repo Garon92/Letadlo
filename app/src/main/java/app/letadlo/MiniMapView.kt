@@ -55,6 +55,8 @@ class MiniMapView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         isFakeBoldText = true
     }
+    private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var markers = FloatArray(0)
     private val clip = Path()
     private val arrow = Path()
     private val dst = RectF()
@@ -68,6 +70,21 @@ class MiniMapView @JvmOverloads constructor(
         capZ = centerZ
         metersPerPixel = mPerPx
         invalidate()
+    }
+
+    /** Cíle misí: trojice [x, z, druh] (druh = GoalKind.ordinal, -1 = další kruh). */
+    fun setMarkers(m: FloatArray) {
+        markers = m
+    }
+
+    private fun markerColor(kind: Int): Int = when (kind) {
+        0 -> Color.rgb(255, 205, 50)
+        1 -> Color.rgb(255, 60, 50)
+        2 -> Color.rgb(255, 140, 30)
+        3 -> Color.rgb(80, 255, 110)
+        4 -> Color.rgb(90, 165, 255)
+        5 -> Color.WHITE
+        else -> Color.argb(150, 120, 220, 255)
     }
 
     fun setPose(x: Float, z: Float, heading: Float) {
@@ -102,6 +119,30 @@ class MiniMapView @JvmOverloads constructor(
                 x0, cy + (World.RUNWAY_HALF_LENGTH - planeZ) * pxPerM, runway,
             )
             canvas.restore()
+        }
+        // cíle – mimo dosah mapy jako tečka na okraji ve správném směru
+        if (b != null) {
+            val pxPerM = (2f * r) / (mapPixels * metersPerPixel)
+            val h = Math.toRadians(headingDeg.toDouble())
+            val ch = cos(h).toFloat()
+            val shh = sin(h).toFloat()
+            var i = 0
+            while (i + 2 < markers.size) {
+                val wx = markers[i] - planeX
+                val wz = markers[i + 1] - planeZ
+                val kind = markers[i + 2].toInt()
+                i += 3
+                // natočení podle kurzu (nahoře = směr letu)
+                var mx = (wx * ch + wz * shh) * pxPerM
+                var my = (-wx * shh + wz * ch) * pxPerM
+                val len = kotlin.math.sqrt(mx * mx + my * my)
+                val edge = r - 7f
+                val outside = len > edge
+                if (outside) { mx = mx / len * edge; my = my / len * edge }
+                markerPaint.color = markerColor(kind)
+                canvas.drawCircle(cx + mx, cy + my, if (outside) 6f else 5f, markerPaint)
+                if (outside) canvas.drawCircle(cx + mx, cy + my, 6f, planeEdge)
+            }
         }
         // letadlo uprostřed míří vždy nahoru
         val s = r * 0.12f

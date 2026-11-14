@@ -11,6 +11,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import app.letadlo.game.AircraftType
@@ -36,6 +37,12 @@ class GameActivity : Activity(), GameRenderer.Listener {
     private lateinit var btnView: TextView
     private lateinit var btnTime: TextView
     private lateinit var miniMap: MiniMapView
+    private lateinit var hudScore: TextView
+    private lateinit var hudCombo: ProgressBar
+    private lateinit var hudObjective: TextView
+    private lateinit var hudLow: TextView
+    private lateinit var hudPopup: TextView
+    private val recentPopups = ArrayList<String>()
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: GameRenderer
     private lateinit var tilt: TiltInput
@@ -83,15 +90,23 @@ class GameActivity : Activity(), GameRenderer.Listener {
         findViewById<TextView>(R.id.hudMap).text = "${map.title} · ${aircraft.title}"
 
         renderer = GameRenderer(map, aircraft, tilt, this)
-        renderer.cockpit = Records.cockpit(this)
+        renderer.viewMode = if (Records.cockpit(this)) 1 else 0
         btnView = findViewById(R.id.btnView)
         btnTime = findViewById(R.id.btnTime)
         updateToggleIcons()
         btnView.setOnClickListener {
-            renderer.cockpit = !renderer.cockpit
-            Records.setCockpit(this, renderer.cockpit)
+            // zvenku → z kabiny → (bombardér) pohled dolů → zvenku
+            val modes = if (aircraft == AircraftType.BOMBER) 3 else 2
+            renderer.viewMode = (renderer.viewMode + 1) % modes
+            Records.setCockpit(this, renderer.viewMode == 1)
             updateToggleIcons()
         }
+        hudScore = findViewById(R.id.hudScore)
+        hudCombo = findViewById(R.id.hudCombo)
+        hudObjective = findViewById(R.id.hudObjective)
+        hudLow = findViewById(R.id.hudLow)
+        hudPopup = findViewById(R.id.hudPopup)
+        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
         val btnFire = findViewById<TextView>(R.id.btnFire)
         if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER) {
             btnFire.visibility = View.VISIBLE
@@ -145,7 +160,11 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     /** Ikona ukazuje, co je právě zapnuté: ✈️ zvenku / 💺 z kabiny, ☀️ den / 🌙 noc. */
     private fun updateToggleIcons() {
-        btnView.text = if (renderer.cockpit) "💺" else "✈️"
+        btnView.text = when (renderer.viewMode) {
+            1 -> "💺"
+            2 -> "🎯"
+            else -> "✈️"
+        }
         btnTime.text = if (renderer.night) "🌙" else "☀️"
     }
 
@@ -208,6 +227,14 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudTime.text = "let " + formatTime(s.airTime)
         attitude.set(s.bankDeg, s.pitchDeg)
         miniMap.setPose(s.x, s.z, s.headingDeg)
+        miniMap.setMarkers(s.markers)
+        hudScore.text = if (s.multiplier > 1) String.format(Locale.ROOT, "%,d  ×%d", s.score, s.multiplier).replace(',', ' ')
+        else String.format(Locale.ROOT, "%,d", s.score).replace(',', ' ')
+        hudCombo.visibility = if (s.multiplier > 1) View.VISIBLE else View.INVISIBLE
+        hudCombo.progress = (s.comboFraction * 100f).toInt()
+        hudObjective.text = s.objective
+        hudLow.visibility = if (s.lowFlying) View.VISIBLE else View.INVISIBLE
+        if (s.popups.isNotEmpty()) showPopups(s.popups)
 
         val text: String? = when {
             s.phase == FlightPhase.CRASHED -> null
@@ -231,6 +258,20 @@ class GameActivity : Activity(), GameRenderer.Listener {
         }
     }
 
+    /** Vyskakující body – poslední dvě hlášky, po chvíli zmizí. */
+    private fun showPopups(list: List<String>) {
+        recentPopups.addAll(list)
+        while (recentPopups.size > 2) recentPopups.removeAt(0)
+        hudPopup.text = recentPopups.joinToString("\n")
+        hudPopup.animate().cancel()
+        hudPopup.alpha = 1f
+        hudPopup.scaleX = 1.15f
+        hudPopup.scaleY = 1.15f
+        hudPopup.animate().scaleX(1f).scaleY(1f).setStartDelay(0).setDuration(180).withEndAction {
+            hudPopup.animate().alpha(0f).setStartDelay(1400).setDuration(500).withEndAction { recentPopups.clear() }
+        }
+    }
+
     override fun onCrash(result: FlightResult) {
         runOnUiThread { showCrash(result) }
     }
@@ -251,21 +292,24 @@ class GameActivity : Activity(), GameRenderer.Listener {
     }
 
     private fun showCrash(r: FlightResult) {
-        val newRecord = Records.submit(this, r.map, r.airTime, r.distance)
+        Records.submit(this, r.map, r.airTime, r.distance)
+        val newRecord = Records.submitScore(this, r.map, r.aircraft, r.score)
         crashReason.text = r.reason.text
+        val scoreText = String.format(Locale.ROOT, "Skóre %,d", r.score).replace(',', ' ')
         crashStats.text = if (r.tookOff) {
+            val details = if (r.summary.isNotEmpty()) "\n${r.summary}" else ""
             String.format(
                 Locale.ROOT,
-                "Doba letu %s  ·  uletěno %.1f km\nmax. výška nad zemí %d m",
-                formatTime(r.airTime), r.distance / 1000f, r.maxAgl.toInt(),
+                "%s%s\nlet %s  ·  %.1f km  ·  max. %d m nad zemí",
+                scoreText, details, formatTime(r.airTime), r.distance / 1000f, r.maxAgl.toInt(),
             )
         } else {
             "Letadlo se ani neodlepilo od země."
         }
-        val best = Records.bestTime(this, r.map)
+        val best = Records.bestScore(this, r.map, r.aircraft)
         crashRecord.text = when {
-            newRecord -> "🏆 Nový rekord na mapě ${r.map.title}!"
-            best > 0f -> "Rekord na mapě ${r.map.title}: ${formatTime(best)}"
+            newRecord && r.score > 0 -> "🏆 Nový rekord: ${r.aircraft.title} na mapě ${r.map.title}!"
+            best > 0 -> String.format(Locale.ROOT, "Rekord %s / %s: %,d", r.aircraft.title, r.map.title, best).replace(',', ' ')
             else -> ""
         }
         crashRecord.visibility = if (crashRecord.text.isEmpty()) View.GONE else View.VISIBLE

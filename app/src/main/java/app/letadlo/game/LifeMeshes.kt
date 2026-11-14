@@ -187,6 +187,102 @@ object LifeMeshes {
         return mb.build()
     }
 
+    /** Kruh k průletu: prstenec v rovině XY o poloměru 1 (barví se v shaderu, svítí). */
+    fun ring(): MeshData {
+        val mb = MeshBuilder(512)
+        val seg = 48
+        val t = 0.075f
+        for (k in 0 until seg) {
+            val a0 = (2 * PI * k / seg).toFloat()
+            val a1 = (2 * PI * (k + 1) / seg).toFloat()
+            val c0 = kotlin.math.cos(a0); val s0 = kotlin.math.sin(a0)
+            val c1 = kotlin.math.cos(a1); val s1 = kotlin.math.sin(a1)
+            // čelní, zadní, vnější a vnitřní plocha prstence
+            for (z in floatArrayOf(-t, t)) {
+                mb.quad(c0 * (1 - t), s0 * (1 - t), z, c0 * (1 + t), s0 * (1 + t), z, c1 * (1 + t), s1 * (1 + t), z, c1 * (1 - t), s1 * (1 - t), z, 1f, 1f, 1f)
+            }
+            mb.quad(c0 * (1 + t), s0 * (1 + t), -t, c0 * (1 + t), s0 * (1 + t), t, c1 * (1 + t), s1 * (1 + t), t, c1 * (1 + t), s1 * (1 + t), -t, 1f, 1f, 1f)
+            mb.quad(c0 * (1 - t), s0 * (1 - t), -t, c1 * (1 - t), s1 * (1 - t), -t, c1 * (1 - t), s1 * (1 - t), t, c0 * (1 - t), s0 * (1 - t), t, 1f, 1f, 1f)
+        }
+        return mb.build()
+    }
+
+    /** Kosočtverečná značka cíle (billboard). */
+    fun diamond(): MeshData {
+        val mb = MeshBuilder(32)
+        mb.quad(0f, -1f, 0f, 0.7f, 0f, 0f, 0f, 1f, 0f, -0.7f, 0f, 0f, 1f, 1f, 1f)
+        mb.quad(0f, -0.55f, 0.01f, 0.38f, 0f, 0.01f, 0f, 0.55f, 0.01f, -0.38f, 0f, 0.01f, 0.15f, 0.15f, 0.15f)
+        mb.quad(0f, -0.38f, 0.02f, 0.26f, 0f, 0.02f, 0f, 0.38f, 0.02f, -0.26f, 0f, 0.02f, 1f, 1f, 1f)
+        return mb.build()
+    }
+
+    /** Pozemní a vzdušné terče (viz [TargetStyle]). Střed spodku v počátku. */
+    fun target(style: Int): MeshData {
+        val mb = MeshBuilder(256)
+        when (style) {
+            TargetStyle.RADAR -> {
+                mb.box(-4f, 0f, -4f, 4f, 3f, 4f, 0.35f, 0.4f, 0.3f, bottom = false)
+                mb.box(-0.4f, 3f, -0.4f, 0.4f, 9f, 0.4f, 0.5f, 0.5f, 0.52f, bottom = false)
+                mb.hexa8(
+                    -5f, 8f, -0.5f, 5f, 8f, -0.5f, 5f, 8f, 0.4f, -5f, 8f, 0.4f,
+                    -5f, 13f, -1.6f, 5f, 13f, -1.6f, 5f, 13f, -0.7f, -5f, 13f, -0.7f,
+                    0.85f, 0.85f, 0.88f,
+                )
+                mb.box(-0.6f, 13f, -1.4f, 0.6f, 14f, -0.6f, 0.9f, 0.15f, 0.12f, 0.7f, 0.9f, 0.15f, 0.12f)
+            }
+            TargetStyle.FUEL -> {
+                for ((i, x) in floatArrayOf(-8f, 0f, 8f).withIndex()) {
+                    mb.cylinderY(x, 0f, 0f, 3.6f, 9f, 3.6f, 10, 0.88f, 0.88f, 0.86f)
+                    mb.cylinderY(x, 9f, 0f, 3.6f, 10.2f, 1.5f, 10, if (i == 1) 0.85f else 0.7f, 0.18f, 0.12f)
+                }
+                mb.box(-11f, 0f, -0.5f, 11f, 1f, 0.5f, 0.35f, 0.35f, 0.37f, bottom = false)
+            }
+            TargetStyle.TANK -> {
+                val o = floatArrayOf(0.33f, 0.37f, 0.22f)
+                mb.box(-1.8f, 0f, -3.4f, 1.8f, 1.5f, 3.4f, o[0], o[1], o[2], bottom = false)
+                mb.box(-2.1f, 0f, -3.2f, -1.6f, 1.1f, 3.2f, 0.12f, 0.12f, 0.12f, bottom = false)
+                mb.box(1.6f, 0f, -3.2f, 2.1f, 1.1f, 3.2f, 0.12f, 0.12f, 0.12f, bottom = false)
+                mb.box(-1.2f, 1.5f, -1.4f, 1.2f, 2.5f, 1.4f, o[0] * 0.9f, o[1] * 0.9f, o[2] * 0.9f, bottom = false)
+                mb.box(-0.15f, 1.85f, -5.6f, 0.15f, 2.15f, -1.2f, 0.2f, 0.2f, 0.18f)
+            }
+            TargetStyle.FACTORY -> {
+                val brick = floatArrayOf(0.62f, 0.32f, 0.24f)
+                mb.box(-22f, 0f, -14f, 22f, 12f, 14f, brick[0], brick[1], brick[2], 1f, 0.3f, 0.3f, 0.32f, bottom = false)
+                mb.box(-22f, 12f, -14f, -8f, 17f, 14f, brick[0] * 0.9f, brick[1] * 0.9f, brick[2] * 0.9f, 1f, 0.3f, 0.3f, 0.32f, bottom = false)
+                for (x in floatArrayOf(4f, 14f)) {
+                    mb.cylinderY(x, 12f, 6f, 2.2f, 42f, 1.6f, 8, 0.55f, 0.3f, 0.24f)
+                    mb.cylinderY(x, 42f, 6f, 1.7f, 43.5f, 1.7f, 8, 0.15f, 0.15f, 0.15f)
+                }
+                for (z in floatArrayOf(-17f, 17f)) {
+                    mb.cylinderY(-14f, 0f, z, 3f, 8f, 3f, 8, 0.75f, 0.75f, 0.72f)
+                }
+            }
+            else -> {
+                // terčový balon: červenobílá koule na laně
+                mb.puff(0f, 2f, 0f, 7f, 7.5f, 1f)
+                mb.blob(0f, 9.5f, 0f, 7.3f, 1.2f, 10, 0.95f, 0.95f, 0.95f)
+                mb.blob(0f, 4f, 0f, 7.3f, 1.2f, 10, 0.9f, 0.12f, 0.1f)
+                mb.box(-0.05f, -12f, -0.05f, 0.05f, 2f, 0.05f, 0.3f, 0.3f, 0.3f)
+            }
+        }
+        return mb.build()
+    }
+
+    /** Heliport nemocnice: bílý kruh s červeným křížem (y = 0). */
+    fun helipad(): MeshData {
+        val mb = MeshBuilder(128)
+        val seg = 24
+        for (k in 0 until seg) {
+            val a0 = (2 * PI * k / seg).toFloat()
+            val a1 = (2 * PI * (k + 1) / seg).toFloat()
+            mb.triangle(0f, 0f, 0f, kotlin.math.cos(a1) * 12f, 0f, kotlin.math.sin(a1) * 12f,
+                kotlin.math.cos(a0) * 12f, 0f, kotlin.math.sin(a0) * 12f, 0.92f, 0.92f, 0.9f)
+        }
+        mb.box(-1.6f, 0.02f, -6f, 1.6f, 0.06f, 6f, 0.85f, 0.1f, 0.1f)
+        mb.box(-6f, 0.02f, -1.6f, 6f, 0.06f, 1.6f, 0.85f, 0.1f, 0.1f)
+        return mb.build()
+    }
+
     /** Tři lopatky elektrárny v rovině XY (osa otáčení Z) a náboj. */
     fun turbineBlades(radius: Float): MeshData {
         val mb = MeshBuilder(128)

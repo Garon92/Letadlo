@@ -75,6 +75,9 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
     /** Chunky s nově zničenými budovami – renderer je přestaví. */
     val dirtyChunks = ArrayList<Long>()
 
+    /** Výbuchy od posledního přečtení (x, y, z, poloměr) – čtou je mise. */
+    val recentExplosions = ArrayList<FloatArray>()
+
     /** Tlačítko palby je stisknuté. */
     @Volatile var trigger = false
 
@@ -140,6 +143,11 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
             if (p.age > p.life) pi.remove()
         }
         while (puffs.size > MAX_PUFFS) puffs.removeAt(0)
+    }
+
+    /** Raketa vybuchne hned (zásah vzdušného cíle). */
+    fun detonate(r: Rocket) {
+        if (rockets.remove(r)) explosion(r.x, r.y, r.z, ROCKET_BLAST)
     }
 
     /** Raketa z křídla, letí přesně ve směru nosu (tam, kam míří zaměřovač). */
@@ -289,6 +297,8 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
     fun explosion(x: Float, y: Float, z: Float, radius: Float): Int {
         blasts.add(Blast(x, y, z, radius / ROCKET_BLAST))
         booms++
+        recentExplosions.add(floatArrayOf(x, y, z, radius))
+        while (recentExplosions.size > 64) recentExplosions.removeAt(0)
         val hit = life.explode(x, y, z, radius)
         val rep = world.damage(x, y, z, radius * 0.42f)
         dirtyChunks.addAll(rep.chunks)

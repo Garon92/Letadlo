@@ -9,6 +9,10 @@ import app.letadlo.game.AircraftType
 import app.letadlo.game.ChunkMesher
 import app.letadlo.game.Combat
 import app.letadlo.game.Fire
+import app.letadlo.game.Goal
+import app.letadlo.game.GoalKind
+import app.letadlo.game.Missions
+import app.letadlo.game.TargetStyle
 import app.letadlo.game.Controls
 import app.letadlo.game.CrashReason
 import app.letadlo.game.DynamicBatch
@@ -48,6 +52,13 @@ class HudState(
     val x: Float,
     val z: Float,
     val headingDeg: Float,
+    val score: Int,
+    val multiplier: Int,
+    val comboFraction: Float,
+    val objective: String,
+    val lowFlying: Boolean,
+    val popups: List<String>,
+    val markers: FloatArray,
 )
 
 class FlightResult(
@@ -59,6 +70,8 @@ class FlightResult(
     val maxAgl: Float,
     val tookOff: Boolean,
     val victims: Int,
+    val score: Int,
+    val summary: String,
 )
 
 class GameRenderer(
@@ -85,7 +98,13 @@ class GameRenderer(
     @Volatile var night = false
 
     /** Pohled z kabiny místo pohledu zvenku. */
-    @Volatile var cockpit = false
+    /** 0 = zvenku, 1 = z kabiny, 2 = pohled dolů (bombardér). */
+    @Volatile var viewMode = 0
+
+    val cockpit: Boolean get() = viewMode == 1
+
+    /** Cíle, body a kombo. */
+    val missions = Missions(world, aircraft)
 
     private val radius = if (map == MapType.MOUNTAINS || aircraft == AircraftType.FIGHTER || aircraft == AircraftType.AIRLINER) 7 else 6
     private val fogEnd = (radius - 0.8f) * World.CHUNK
@@ -120,6 +139,17 @@ class GameRenderer(
     private val weapon = Combat.weaponFor(aircraft)
     private val bombT = LifeMeshes.bomb()
     private val impact = FloatArray(3)
+    private val targetT = HashMap<Int, app.letadlo.game.MeshData>().apply {
+        for (st in intArrayOf(TargetStyle.RADAR, TargetStyle.FUEL, TargetStyle.TANK, TargetStyle.FACTORY, TargetStyle.BALLOON)) {
+            put(st, LifeMeshes.target(st))
+        }
+    }
+    private val rescueeT = LifeMeshes.person(1)
+    private val helipadT = LifeMeshes.helipad()
+    private lateinit var ringMesh: GpuMesh
+    private lateinit var diamondMesh: GpuMesh
+    private var aspect = 1.8f
+    private var fov = 52f
     private val decalBatch = DynamicBatch(1024)
     private val decals = DynamicMesh()
     private lateinit var reticle: GpuMesh
@@ -184,6 +214,7 @@ class GameRenderer(
         flight.reset()
         life.reset()
         combat.reset()
+        missions.reset()
         chunks.loadNow(flight.x, flight.z, 1)
         crashTime = 0f
         crashReported = false
@@ -218,6 +249,8 @@ class GameRenderer(
         dynamic.init()
         decals.init()
         reticle = GpuMesh(LifeMeshes.reticle())
+        ringMesh = GpuMesh(LifeMeshes.ring())
+        diamondMesh = GpuMesh(LifeMeshes.diamond())
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         skyVao = ids[0]
@@ -229,8 +262,8 @@ class GameRenderer(
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
-        val aspect = width.toFloat() / max(1, height)
-        Matrix.perspectiveM(proj, 0, 52f, aspect, 1.5f, fogEnd + 800f)
+        aspect = width.toFloat() / max(1, height)
+        Matrix.perspectiveM(proj, 0, fov, aspect, 1.5f, fogEnd + 800f)
         Matrix.perspectiveM(projNear, 0, 62f, aspect, 0.05f, 120f)
     }
 
@@ -263,6 +296,7 @@ class GameRenderer(
                     FlightResult(
                         world.map, aircraft, flight.crashReason ?: CrashReason.TERRAIN,
                         flight.airTime, flight.distance, flight.maxAltitudeAgl, flight.hasTakenOff, victims,
+                        missions.score, summary(),
                     )
                 )
             }
@@ -271,6 +305,14 @@ class GameRenderer(
         updateCamera(dt)
         life.update(dt, camX, camZ)
         combat.update(dt, flight, weapon)
+        missions.update(dt, flight, combat)
+        // širší zorné pole s rychlostí – pocit rychlosti
+        val speedK = ((flight.speed - 60f) / 450f).coerceIn(0f, 1f)
+        val wantFov = 52f + 14f * speedK
+        if (abs(wantFov - fov) > 0.05f) {
+            fov += (wantFov - fov) * min(1f, dt * 2f)
+            Matrix.perspectiveM(proj, 0, fov, aspect, 1.5f, fogEnd + 800f)
+        }
         if (combat.dirtyChunks.isNotEmpty()) {
             for (k in combat.dirtyChunks) chunks.rebuild((k shr 32).toInt(), k.toInt())
             combat.dirtyChunks.clear()
@@ -302,6 +344,13 @@ class GameRenderer(
                     x = flight.x,
                     z = flight.z,
                     headingDeg = deg(flight.heading),
+                    score = missions.score,
+                    multiplier = missions.multiplier,
+                    comboFraction = (missions.comboLeft / Missions.COMBO_TIME).coerceIn(0f, 1f),
+                    objective = missions.objective,
+                    lowFlying = missions.lowFlying,
+                    popups = missions.popups.map { it.text }.also { missions.popups.clear() },
+                    markers = missions.markers(),
                 )
             )
         }
@@ -360,6 +409,17 @@ class GameRenderer(
         listener.onMinimap(px, mapN, cx, cz, step)
     }
 
+    private fun summary(): String {
+        val m = missions
+        val parts = ArrayList<String>()
+        if (m.rings > 0) parts += "kruhy ${m.rings}"
+        if (m.targets > 0) parts += "cíle ${m.targets}"
+        if (m.rescued > 0) parts += "zachráněno ${m.rescued}"
+        if (m.landingsScored > 0) parts += "přistání ${m.landingsScored}"
+        if (m.nearMisses > 0) parts += "těsně ${m.nearMisses}×"
+        return parts.joinToString("  ·  ")
+    }
+
     private fun deg(r: Float): Float = (r * 180.0 / PI).toFloat()
 
     private fun planeModel(out: FloatArray) {
@@ -376,12 +436,17 @@ class GameRenderer(
     private fun updateCamera(dt: Float) {
         val f = flight
         val crashed = f.phase == FlightPhase.CRASHED
+        if (viewMode == 2 && !crashed) {
+            bombView()
+            return
+        }
         if (cockpit && !crashed) {
             planeModel(model)
             v4b[0] = eye[0]; v4b[1] = eye[1]; v4b[2] = eye[2]; v4b[3] = 1f
             Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
             camX = v4[0]; camY = v4[1]; camZ = v4[2]
-            v4b[0] = 0f; v4b[1] = 0f; v4b[2] = -1f; v4b[3] = 0f
+            val sh = shake()
+            v4b[0] = sin(time * 37f) * sh; v4b[1] = sin(time * 29f + 1f) * sh; v4b[2] = -1f; v4b[3] = 0f
             Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
             val lx = camX + v4[0]
             val ly = camY + v4[1]
@@ -451,7 +516,43 @@ class GameRenderer(
         val r = if (crashed) 0f else f.bank * 0.4f
         val rightX = -fwdZ
         val rightZ = fwdX
-        Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, sin(r) * rightX, cos(r), sin(r) * rightZ)
+        val sh = if (crashed) 0f else shake() * 30f * s
+        Matrix.setLookAtM(
+            view, 0, camX, camY, camZ, lx + sin(time * 37f) * sh, ly + sin(time * 29f + 1f) * sh, lz,
+            sin(r) * rightX, cos(r), sin(r) * rightZ,
+        )
+    }
+
+    /** Lehké chvění obrazu při rychlém letu nízko nad zemí. */
+    private fun shake(): Float {
+        val f = flight
+        if (f.phase != FlightPhase.AIRBORNE) return 0f
+        val fast = ((f.speed - 70f) / 450f).coerceIn(0f, 1f)
+        val low = (1f - f.altitudeAgl / 80f).coerceIn(0f, 1f)
+        return 0.0035f * fast * (0.3f + 0.7f * low)
+    }
+
+    /** Bombardér: kamera pod přídí míří šikmo dolů, aby bylo vidět, kam bomby padají. */
+    private fun bombView() {
+        planeModel(model)
+        v4b[0] = 0f; v4b[1] = -3.4f; v4b[2] = -8f; v4b[3] = 1f
+        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+        camX = v4[0]; camY = v4[1]; camZ = v4[2]
+        v4b[0] = 0f; v4b[1] = -0.94f; v4b[2] = -0.34f; v4b[3] = 0f
+        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+        val lx = camX + v4[0]
+        val ly = camY + v4[1]
+        val lz = camZ + v4[2]
+        val hl = sqrt(v4[0] * v4[0] + v4[2] * v4[2])
+        if (hl > 0.05f) {
+            fwdX = v4[0] / hl
+            fwdZ = v4[2] / hl
+        }
+        v4b[0] = 0f; v4b[1] = 0.34f; v4b[2] = -0.94f; v4b[3] = 0f
+        Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
+        Matrix.setLookAtM(view, 0, camX, camY, camZ, lx, ly, lz, v4[0], v4[1], v4[2])
+        offX = camX - flight.x; offY = camY - flight.y; offZ = camZ - flight.z
+        camInit = true
     }
 
     // ------------------------------------------------------------------ pohyblivé věci
@@ -497,6 +598,21 @@ class GameRenderer(
                 )
             }
         }
+        // cíle misí
+        for (g in missions.goals) {
+            if (g.dead || !near(g.x, g.z, 6000f)) continue
+            when (g.kind) {
+                GoalKind.GROUND_TARGET -> {
+                    val yaw = if (g.vx != 0f || g.vz != 0f) Rot.yawFor(g.vx, g.vz) else g.x * 0.01f
+                    batch.add(targetT.getValue(g.style), g.x, g.y, g.z, yaw)
+                }
+                GoalKind.AIR_TARGET -> batch.add(targetT.getValue(TargetStyle.BALLOON), g.x, g.y - 2f, g.z, g.age * 0.2f)
+                GoalKind.PICKUP -> batch.add(rescueeT, g.x, g.y, g.z, time * 0.8f)
+                GoalKind.DROPOFF -> batch.add(helipadT, g.x, g.y + 0.15f, g.z, 0f)
+                else -> Unit
+            }
+        }
+
         // rakety, kouř a plameny
         for (r in combat.rockets) {
             val v = sqrt(r.vx * r.vx + r.vy * r.vy + r.vz * r.vz).coerceAtLeast(1f)
@@ -641,7 +757,7 @@ class GameRenderer(
         val f = flight
         val crashed = f.phase == FlightPhase.CRASHED
         val inCockpit = cockpit && !crashed
-        if (!inCockpit && (!crashed || crashTime < 0.12f)) {
+        if (!inCockpit && !(viewMode == 2 && !crashed) && (!crashed || crashTime < 0.12f)) {
             planeModel(model)
             p.setMatrix("uModel", model)
             body.draw()
@@ -676,6 +792,7 @@ class GameRenderer(
             GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
         }
 
+        drawGoals(p)
         for (b in combat.blasts) drawBlast(p, b.x, b.y, b.z, b.age, b.size)
 
         GLES30.glDepthMask(true)
@@ -683,6 +800,7 @@ class GameRenderer(
 
         if (inCockpit) drawCockpit(p)
         if (weapon != app.letadlo.game.Weapon.NONE && !crashed) drawReticle(p)
+        if (!crashed) drawMarkers(p)
         GLES30.glBindVertexArray(0)
     }
 
@@ -732,6 +850,89 @@ class GameRenderer(
         GLES30.glDisable(GLES30.GL_CULL_FACE)
         p.setMatrix("uModel", identity)
         cockpitMesh.draw()
+    }
+
+    /** Zářící kruhy k průletu a kruhy na místech přistání. */
+    private fun drawGoals(p: GlProgram) {
+        p.set("uMode", Shaders.MODE_GLOW)
+        val pulse = 1f + 0.04f * sin(time * 5f)
+        for (g in missions.goals) {
+            if (g.dead) continue
+            when (g.kind) {
+                GoalKind.RING -> {
+                    ringModel(g, if (g.preview) 1f else pulse)
+                    if (g.preview) p.set("uTint", 0.4f, 0.9f, 1f, 0.4f) else p.set("uTint", 1f, 0.8f, 0.15f, 0.9f)
+                }
+                GoalKind.PICKUP, GoalKind.DROPOFF -> {
+                    flatRingModel(g.x, g.y + 0.6f, g.z, g.radius * pulse)
+                    if (g.kind == GoalKind.PICKUP) p.set("uTint", 0.3f, 1f, 0.4f, 0.85f) else p.set("uTint", 0.35f, 0.65f, 1f, 0.85f)
+                }
+                else -> continue
+            }
+            p.setMatrix("uModel", model)
+            ringMesh.draw()
+        }
+    }
+
+    private fun ringModel(g: Goal, scale: Float) {
+        val r = g.radius * scale
+        Matrix.setIdentityM(model, 0)
+        model[0] = -g.nz * r; model[1] = 0f; model[2] = g.nx * r
+        model[4] = 0f; model[5] = r; model[6] = 0f
+        model[8] = g.nx * r; model[9] = 0f; model[10] = g.nz * r
+        model[12] = g.x; model[13] = g.y; model[14] = g.z
+    }
+
+    private fun flatRingModel(x: Float, y: Float, z: Float, r: Float) {
+        Matrix.setIdentityM(model, 0)
+        model[0] = r
+        model[5] = 0f; model[6] = -r
+        model[9] = r; model[10] = 0f
+        model[12] = x; model[13] = y; model[14] = z
+    }
+
+    /** Značky cílů – vždy viditelné, stejně velké na obrazovce, barva podle druhu. */
+    private fun drawMarkers(p: GlProgram) {
+        Matrix.multiplyMM(viewProj, 0, proj, 0, view, 0)
+        p.setMatrix("uViewProj", viewProj)
+        p.set("uCamPos", camX, camY, camZ)
+        p.set("uMode", Shaders.MODE_GLOW)
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        for (g in missions.goals) {
+            if (g.dead || g.preview) continue
+            val my = when (g.kind) {
+                GoalKind.RING -> g.y + g.radius * 1.6f
+                GoalKind.GROUND_TARGET -> g.y + g.radius * 2f + 14f
+                GoalKind.AIR_TARGET -> g.y + 22f
+                GoalKind.PICKUP, GoalKind.DROPOFF -> g.y + 22f
+                GoalKind.RUNWAY -> g.y + 40f
+            }
+            val dx = g.x - camX
+            val dy = my - camY
+            val dz = g.z - camZ
+            val d = sqrt(dx * dx + dy * dy + dz * dz)
+            if (d < 40f) continue
+            val s = d * 0.017f
+            Matrix.setIdentityM(model, 0)
+            model[0] = view[0] * s; model[1] = view[4] * s; model[2] = view[8] * s
+            model[4] = view[1] * s; model[5] = view[5] * s; model[6] = view[9] * s
+            model[8] = view[2] * s; model[9] = view[6] * s; model[10] = view[10] * s
+            model[12] = g.x; model[13] = my; model[14] = g.z
+            p.setMatrix("uModel", model)
+            when (g.kind) {
+                GoalKind.RING -> p.set("uTint", 1f, 0.82f, 0.2f, 0.85f)
+                GoalKind.GROUND_TARGET -> p.set("uTint", 1f, 0.22f, 0.18f, 0.9f)
+                GoalKind.AIR_TARGET -> p.set("uTint", 1f, 0.55f, 0.1f, 0.9f)
+                GoalKind.PICKUP -> p.set("uTint", 0.3f, 1f, 0.4f, 0.9f)
+                GoalKind.DROPOFF -> p.set("uTint", 0.35f, 0.65f, 1f, 0.9f)
+                GoalKind.RUNWAY -> p.set("uTint", 1f, 1f, 1f, 0.9f)
+            }
+            diamondMesh.draw()
+        }
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
     }
 
     /** Průhledný zelený zaměřovač v místě, kam míří nos (a kam poletí rakety). */

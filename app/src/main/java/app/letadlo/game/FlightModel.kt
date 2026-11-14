@@ -6,6 +6,7 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -34,8 +35,10 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         const val G = 9.81f
         const val ROLL_FRICTION = 0.25f
         const val HELI_SPIN_UP = 2.5f
-        const val HELI_CLIMB = 15f
-        const val HELI_SINK = 16f
+        const val HELI_CLIMB = 28f
+        const val HELI_SINK = 30f
+        /** Kolem neutrální polohy vrtulník drží výšku. */
+        const val HELI_HOLD = 0.18f
 
         fun rad(deg: Float): Float = (deg * PI / 180.0).toFloat()
     }
@@ -70,6 +73,14 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     /** Roztočení rotoru vrtulníku 0..1. */
     var rotorSpin = 0f; private set
 
+    /** Počet přistání a svislá rychlost při posledním dosednutí (pro hodnocení). */
+    var landings = 0; private set
+    var touchdownVs = 0f; private set
+    var lastLandingOnRunway = false; private set
+
+    /** Brzdění na zemi (dopravní letadlo po dokončeném letu). */
+    var brake = false
+
     val gearHeight: Float get() = type.gearHeight
 
     val altitudeAgl: Float get() = y - max(world.groundHeight(x, z), World.SEA_LEVEL) - type.gearHeight
@@ -99,6 +110,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         maxAltitudeAgl = 0f
         hasTakenOff = false
         rotorSpin = 0f
+        brake = false
     }
 
     /** Umístí letadlo rovnou do vzduchu (pro testy). */
@@ -149,10 +161,10 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     // ------------------------------------------------------------------ letadla
 
     private fun updateGround(dt: Float, p: Float) {
-        val accel = type.groundThrust - type.drag * speed * speed - ROLL_FRICTION
+        val accel = if (brake) -7f else type.groundThrust - type.drag * speed * speed - ROLL_FRICTION
         speed = max(0f, speed + accel * dt)
         bank = approach(bank, 0f, dt, 6f)
-        val canRotate = speed >= type.rotateSpeed
+        val canRotate = speed >= type.rotateSpeed && !brake
         val wantPitch = if (canRotate && p > 0.12f) min(p * maxPitchUp, maxRotatePitch) else 0f
         pitch = approach(pitch, wantPitch, dt, 3f)
         val step = speed * dt
@@ -215,9 +227,9 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         pitch = approach(pitch, 0f, dt, 4f)
         x += sin(heading) * speed * dt
         z -= cos(heading) * speed * dt
-        y = max(world.groundHeight(x, z), World.SEA_LEVEL) + type.gearHeight
+        y = landingHeight() + type.gearHeight
         verticalSpeed = 0f
-        if (rotorSpin >= 1f && p > 0.15f) {
+        if (rotorSpin >= 1f && p > HELI_HOLD) {
             phase = FlightPhase.AIRBORNE
             hasTakenOff = true
             verticalSpeed = 1.5f
@@ -229,9 +241,11 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         airTime += dt
         rotorSpin = 1f
         bank = approach(bank, r * maxBank, dt, type.bankRate)
-        var targetVy = if (p >= 0f) p * HELI_CLIMB else p * HELI_SINK
+        // kolem neutrálu drží výšku, mimo něj rychle stoupá/klesá
+        val pp = if (abs(p) < HELI_HOLD) 0f else (p - sign(p) * HELI_HOLD) / (1f - HELI_HOLD)
+        var targetVy = if (pp >= 0f) pp * HELI_CLIMB else pp * HELI_SINK
         if (y > type.ceiling) targetVy = min(targetVy, -1f)
-        verticalSpeed = approach(verticalSpeed, targetVy, dt, 1.6f)
+        verticalSpeed = approach(verticalSpeed, targetVy, dt, 3.2f)
 
         // u země se vrtulník vznáší a jen pomalu popojíždí, výš zrychlí na cestovní rychlost
         val agl = altitudeAgl
@@ -259,17 +273,29 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
 
     private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
 
+    /** Kam může dosednout: terén, u vrtulníku i rovné střechy. */
+    private fun landingHeight(): Float {
+        val gh = max(world.groundHeight(x, z), World.SEA_LEVEL)
+        if (!type.helicopter) return gh
+        val roof = world.roofTop(x, z) ?: return gh
+        return max(gh, roof)
+    }
+
     private fun checkCollisions() {
-        val gh = world.groundHeight(x, z)
-        if (gh < World.SEA_LEVEL && y - type.gearHeight * 0.5f <= World.SEA_LEVEL) {
+        val heli = type.helicopter
+        val roof = if (heli) world.roofTop(x, z) else null
+        val gh = if (roof != null) max(roof, world.groundHeight(x, z)) else world.groundHeight(x, z)
+        if (roof == null && gh < World.SEA_LEVEL && y - type.gearHeight * 0.5f <= World.SEA_LEVEL) {
             crash(CrashReason.WATER)
             return
         }
         if (y - type.gearHeight <= gh) {
-            val heli = type.helicopter
             val gentle = verticalSpeed > -4.5f && abs(bank) < rad(15f) && (heli || pitch > -rad(8f))
             if (gentle && (heli || world.onRunway(x, z))) {
                 // přistání – letadlo pokračuje po dráze (motor táhne dál), vrtulník stojí
+                touchdownVs = verticalSpeed
+                lastLandingOnRunway = world.onRunway(x, z)
+                landings++
                 y = gh + type.gearHeight
                 phase = FlightPhase.ROLLING
                 pitch = 0f
@@ -280,7 +306,9 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
             y = gh + 0.5f
             return
         }
-        when (world.hitObstacle(x, y, z, type.radius)) {
+        // vrtulník: kolizní koule nad ližinami, aby šlo sednout na střechu i z ní vzlétnout
+        val hit = if (heli) world.hitObstacle(x, y + 1.5f, z, 3f) else world.hitObstacle(x, y, z, type.radius)
+        when (hit) {
             ObstacleKind.BUILDING -> crash(CrashReason.BUILDING)
             ObstacleKind.TREE -> crash(CrashReason.TREE)
             ObstacleKind.TURBINE -> crash(CrashReason.TURBINE)

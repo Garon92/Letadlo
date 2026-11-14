@@ -30,6 +30,26 @@ Na telefonu povol instalaci z neznámých zdrojů a APK otevři. Vyžaduje Andro
 V menu je posuvník **citlivosti náklonu** (výchozí: plná zatáčka už při ~15° náklonu telefonu),
 volba **Obrátit výškovku** a vypínač **Zvuku motoru**.
 
+## Hratelnost
+
+Každý let sbírá **skóre** a **kombo** (násobitel až ×8, drží se, dokud plníš cíle):
+
+- **Nízký let** – body přibývají podle rychlosti a toho, jak blízko země letíš.
+- **Těsně!** – bonus za průlet těsně kolem budovy, stromu nebo elektrárny.
+- **Přistání** – hodnocení ★–★★★ podle toho, jak měkce dosedneš na dráhu.
+
+A každé letadlo má vlastní úkol (zářící značky ukazují cíle přes celou obrazovku i v mapě):
+
+| Letadlo | Úkol |
+| --- | --- |
+| 🛩️ Sportovní | zlaté kruhy nízko nad krajinou, mezi stromy a domy (modře je vidět i další kruh) |
+| ⚡ Stíhačka | kruhy v horských údolích a ulicích mezi mrakodrapy, terčové balony a pozemní cíle pro rakety |
+| 💣 Bombardér | továrny, sklady paliva a radary; tlačítko pohledu má navíc **🎯 pohled dolů** |
+| 🚁 Vrtulník | záchrana zraněných ze střech mrakodrapů, horských svahů a luk → přistát u nemocnice na letišti |
+| ✈️ Dopravní | trasa přes 4 body, přistávací koridor a hodnocené přistání; pak zastaví a letí znovu |
+
+Tlačítkem **↩** nahoře se vrátíš do menu. V menu je u každé mapy rekord pro vybrané letadlo.
+
 ## Letadla
 
 | Letadlo | Vlastnosti |
