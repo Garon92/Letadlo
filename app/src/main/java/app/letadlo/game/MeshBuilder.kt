@@ -122,5 +122,42 @@ class MeshBuilder(initialVertices: Int = 256) {
         }
     }
 
+    /** Zploštělá koule s rovným spodkem – chuchvalec mraku. */
+    fun puff(cx: Float, cy: Float, cz: Float, rx: Float, ry: Float, shade: Float) {
+        val rings = 3
+        val sides = 7
+        val maxT = (Math.PI * 0.62).toFloat()
+        fun px(t: Float, p: Float) = cx + sin(t) * cos(p) * rx
+        fun py(t: Float) = cy + cos(t) * ry
+        fun pz(t: Float, p: Float) = cz + sin(t) * sin(p) * rx
+        for (ri in 0 until rings) {
+            val t0 = maxT * ri / rings
+            val t1 = maxT * (ri + 1) / rings
+            val c = shade * (1f - 0.07f * ri)
+            for (s in 0 until sides) {
+                val p0 = (2.0 * Math.PI * s / sides).toFloat()
+                val p1 = (2.0 * Math.PI * (s + 1) / sides).toFloat()
+                if (ri == 0) {
+                    triangle(cx, py(0f), cz, px(t1, p1), py(t1), pz(t1, p1), px(t1, p0), py(t1), pz(t1, p0), c, c, c * 1.01f)
+                } else {
+                    quad(
+                        px(t0, p0), py(t0), pz(t0, p0),
+                        px(t0, p1), py(t0), pz(t0, p1),
+                        px(t1, p1), py(t1), pz(t1, p1),
+                        px(t1, p0), py(t1), pz(t1, p0),
+                        c, c, c * 1.01f,
+                    )
+                }
+            }
+        }
+        val yb = py(maxT)
+        val cb = shade * 0.8f
+        for (s in 0 until sides) {
+            val p0 = (2.0 * Math.PI * s / sides).toFloat()
+            val p1 = (2.0 * Math.PI * (s + 1) / sides).toFloat()
+            triangle(cx, yb, cz, px(maxT, p0), yb, pz(maxT, p0), px(maxT, p1), yb, pz(maxT, p1), cb, cb, cb * 1.02f)
+        }
+    }
+
     fun build(): MeshData = MeshData(v.copyOf(vertexCount * STRIDE), vertexCount, idx.copyOf(indexCount), indexCount)
 }

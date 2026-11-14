@@ -8,6 +8,7 @@ class ChunkMeshes(
     val terrainFar: MeshData,
     val trees: MeshData,
     val buildings: MeshData,
+    val clouds: MeshData,
 )
 
 /** Převádí obsah chunku na trojúhelníky. Běží na pracovním vlákně. */
@@ -20,7 +21,8 @@ object ChunkMesher {
         terrain(c, 1),
         terrain(c, 2),
         trees(c.trees),
-        buildings(c.buildings),
+        buildings(c.buildings, c.houses),
+        clouds(c.clouds),
     )
 
     private fun terrain(c: ChunkContent, step: Int): MeshData {
@@ -104,8 +106,8 @@ object ChunkMesher {
         }
     }
 
-    fun buildings(list: List<Box>): MeshData {
-        val mb = MeshBuilder(list.size * 24 + 4)
+    fun buildings(list: List<Box>, houses: List<House> = emptyList()): MeshData {
+        val mb = MeshBuilder(list.size * 24 + houses.size * 34 + 4)
         for (b in list) {
             mb.box(
                 b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ,
@@ -113,6 +115,36 @@ object ChunkMesher {
                 b.r * 0.55f, b.g * 0.55f, b.b * 0.56f, bottom = false,
             )
         }
+        for (h in houses) addHouse(mb, h)
+        return mb.build()
+    }
+
+    fun addHouse(mb: MeshBuilder, h: House) {
+        val x0 = h.x - h.halfW
+        val x1 = h.x + h.halfW
+        val z0 = h.z - h.halfD
+        val z1 = h.z + h.halfD
+        val y0 = h.y - 1f
+        val y1 = h.y + h.wallH
+        val y2 = y1 + h.roofH
+        val o = 0.6f
+        mb.box(x0, y0, z0, x1, y1, z1, h.wr, h.wg, h.wb, bottom = false)
+        if (h.ridgeAlongX) {
+            mb.quad(x0 - o, y1, z1 + o, x1 + o, y1, z1 + o, x1 + o, y2, h.z, x0 - o, y2, h.z, h.rr, h.rg, h.rb)
+            mb.quad(x1 + o, y1, z0 - o, x0 - o, y1, z0 - o, x0 - o, y2, h.z, x1 + o, y2, h.z, h.rr * 0.9f, h.rg * 0.9f, h.rb * 0.9f)
+            mb.triangle(x0, y1, z0, x0, y1, z1, x0, y2, h.z, h.wr, h.wg, h.wb)
+            mb.triangle(x1, y1, z1, x1, y1, z0, x1, y2, h.z, h.wr, h.wg, h.wb)
+        } else {
+            mb.quad(x1 + o, y1, z1 + o, x1 + o, y1, z0 - o, h.x, y2, z0 - o, h.x, y2, z1 + o, h.rr, h.rg, h.rb)
+            mb.quad(x0 - o, y1, z0 - o, x0 - o, y1, z1 + o, h.x, y2, z1 + o, h.x, y2, z0 - o, h.rr * 0.9f, h.rg * 0.9f, h.rb * 0.9f)
+            mb.triangle(x1, y1, z0, x0, y1, z0, h.x, y2, z0, h.wr, h.wg, h.wb)
+            mb.triangle(x0, y1, z1, x1, y1, z1, h.x, y2, z1, h.wr, h.wg, h.wb)
+        }
+    }
+
+    fun clouds(list: List<Cloud>): MeshData {
+        val mb = MeshBuilder(list.size * 80 + 4)
+        for (c in list) mb.puff(c.x, c.y, c.z, c.rx, c.ry, c.shade)
         return mb.build()
     }
 }

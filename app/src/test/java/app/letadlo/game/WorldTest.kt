@@ -83,6 +83,54 @@ class WorldTest {
     }
 
     @Test
+    fun villagesSuburbsAndClouds() {
+        val country = World(MapType.COUNTRYSIDE)
+        var houses = 0
+        var clouds = 0
+        for (dz in -8..8) for (dx in -8..8) {
+            val c = country.content(dx, dz)
+            houses += c.houses.size
+            clouds += c.clouds.size
+            for (h in c.houses) {
+                assertFalse("dům ve vodě", country.groundHeight(h.x, h.z) < World.SEA_LEVEL)
+                for (t in c.trees) {
+                    val inside = kotlin.math.abs(t.x - h.x) < h.halfW && kotlin.math.abs(t.z - h.z) < h.halfD
+                    assertFalse("strom v domě", inside)
+                }
+            }
+        }
+        assertTrue("v krajině jsou vesnice ($houses domů)", houses > 40)
+        assertTrue("jsou mraky ($clouds)", clouds > 30)
+
+        val city = World(MapType.CITY)
+        var suburb = 0
+        val ccx = World.chunkOf(World.CITY_X)
+        val ccz = World.chunkOf(World.CITY_Z)
+        for (dz in -7..7) for (dx in -7..7) {
+            for (h in city.content(ccx + dx, ccz + dz).houses) {
+                if (city.distToCity(h.x, h.z) > World.CITY_RADIUS - 200f) suburb++
+            }
+        }
+        assertTrue("město má předměstí ($suburb domků)", suburb > 200)
+    }
+
+    @Test
+    fun houseIsAnObstacle() {
+        val w = World(MapType.COUNTRYSIDE)
+        var house: House? = null
+        loop@ for (dz in -8..8) for (dx in -8..8) {
+            val hs = w.content(dx, dz).houses
+            if (hs.isNotEmpty()) {
+                house = hs[0]
+                break@loop
+            }
+        }
+        val h = house!!
+        assertEquals(ObstacleKind.BUILDING, w.hitObstacle(h.x, h.y + h.wallH * 0.5f, h.z, 1f))
+        assertEquals(null, w.hitObstacle(h.x, h.y + h.wallH + h.roofH + 40f, h.z, 3f))
+    }
+
+    @Test
     fun noObstaclesOnRunway() {
         for (map in MapType.entries) {
             val w = World(map)

@@ -5,6 +5,7 @@
     <string name="menu_howto">Drž telefon na šířku jako volant. Natočení doleva/doprava = zatáčka, horní hrana k sobě = stoupání, od sebe = klesání. Ťuknutím na obrazovku během letu telefon znovu zkalibruješ.</string>
     <string name="menu_pick_map">Vyber mapu</string>
     <string name="invert_pitch">Obrátit výškovku</string>
+    <string name="sound">Zvuk motoru</string>
     <string name="map_mountains">Hory</string>
     <string name="map_mountains_desc">Štíty, sníh a dlouhé údolí</string>
     <string name="map_city">Město</string>

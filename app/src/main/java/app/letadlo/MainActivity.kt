@@ -22,6 +22,10 @@ class MainActivity : Activity() {
         val invert = findViewById<CheckBox>(R.id.invertPitch)
         invert.isChecked = Records.invertPitch(this)
         invert.setOnCheckedChangeListener { _, checked -> Records.setInvertPitch(this, checked) }
+
+        val sound = findViewById<CheckBox>(R.id.sound)
+        sound.isChecked = Records.sound(this)
+        sound.setOnCheckedChangeListener { _, checked -> Records.setSound(this, checked) }
     }
 
     override fun onResume() {

@@ -28,6 +28,12 @@ object Records {
         return record
     }
 
+    fun sound(c: Context): Boolean = prefs(c).getBoolean("sound", true)
+
+    fun setSound(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("sound", v).apply()
+    }
+
     fun invertPitch(c: Context): Boolean = prefs(c).getBoolean("invert_pitch", false)
 
     fun setInvertPitch(c: Context, v: Boolean) {

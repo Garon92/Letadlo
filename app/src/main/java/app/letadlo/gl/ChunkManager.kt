@@ -21,9 +21,10 @@ class ChunkManager(private val world: World, private val radius: Int) {
         val far: GpuMesh,
         val trees: GpuMesh,
         val buildings: GpuMesh,
+        val clouds: GpuMesh,
     ) {
         fun release() {
-            near.release(); far.release(); trees.release(); buildings.release()
+            near.release(); far.release(); trees.release(); buildings.release(); clouds.release()
         }
     }
 
@@ -65,7 +66,7 @@ class ChunkManager(private val world: World, private val radius: Int) {
 
     private fun upload(m: ChunkMeshes) = GpuChunk(
         m.cx, m.cz,
-        GpuMesh(m.terrainNear), GpuMesh(m.terrainFar), GpuMesh(m.trees), GpuMesh(m.buildings),
+        GpuMesh(m.terrainNear), GpuMesh(m.terrainFar), GpuMesh(m.trees), GpuMesh(m.buildings), GpuMesh(m.clouds),
     )
 
     fun update(camX: Float, camZ: Float) {
@@ -112,7 +113,7 @@ class ChunkManager(private val world: World, private val radius: Int) {
                             ready.add(ChunkMesher.build(world, world.content(cx, cz)))
                         } catch (t: Throwable) {
                             // když generování selže, chunk se zkusí příště znovu
-                            ready.add(ChunkMeshes(cx, cz, EMPTY, EMPTY, EMPTY, EMPTY))
+                            ready.add(ChunkMeshes(cx, cz, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY))
                         }
                     }
                 } catch (e: java.util.concurrent.RejectedExecutionException) {
@@ -160,6 +161,13 @@ class ChunkManager(private val world: World, private val radius: Int) {
             if (d < 0f) continue
             c.buildings.draw()
             if (d < treeDist) c.trees.draw()
+        }
+    }
+
+    fun drawClouds(camX: Float, camZ: Float, fwdX: Float, fwdZ: Float, maxDist: Float) {
+        for (c in loaded.values) {
+            if (visible(c, camX, camZ, fwdX, fwdZ, maxDist) < 0f) continue
+            c.clouds.draw()
         }
     }
 

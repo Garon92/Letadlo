@@ -42,7 +42,7 @@ object Shaders {
         uniform vec4 uRunway;
         uniform float uRunwayY;
         uniform vec4 uCity;
-        uniform vec2 uCityGrid;
+        uniform vec4 uCityGrid;
         uniform vec4 uTint;
         uniform float uTime;
         out vec4 fragColor;
@@ -75,6 +75,11 @@ object Shaders {
             float isRoad = max(step(l.x, road), step(l.y, road));
             vec3 asphalt = vec3(0.21, 0.215, 0.22);
             vec3 walk = vec3(0.60, 0.59, 0.56);
+            if (distance(p, uCity.xy) > uCityGrid.z) {
+                // předměstí: trávníky a zahrady místo dlažby
+                vec2 lot = floor((p - uCity.xy) / 40.0);
+                walk = mix(vec3(0.36, 0.52, 0.23), vec3(0.30, 0.46, 0.20), hash12(lot));
+            }
             float fade = 1.0 - smoothstep(300.0, 1300.0, dist);
             float lineX = step(abs(l.x - road * 0.5), 0.22) * step(fract(p.y / 12.0), 0.5) * step(road, l.y);
             float lineZ = step(abs(l.y - road * 0.5), 0.22) * step(fract(p.x / 12.0), 0.5) * step(road, l.x);

@@ -34,6 +34,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: GameRenderer
     private lateinit var tilt: TiltInput
+    private var sound: EngineSound? = null
 
     private lateinit var hudSpeed: TextView
     private lateinit var hudAlt: TextView
@@ -56,6 +57,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
         tilt = TiltInput(this)
         tilt.invertPitch = Records.invertPitch(this)
+        if (Records.sound(this)) sound = EngineSound()
         if (!tilt.available) {
             Toast.makeText(this, "Tento telefon nemá senzor náklonu.", Toast.LENGTH_LONG).show()
         }
@@ -90,6 +92,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
         findViewById<Button>(R.id.btnAgain).setOnClickListener {
             crashPanel.visibility = View.GONE
             tilt.calibrate()
+            sound?.running = true
             glView.queueEvent { renderer.restart() }
         }
         findViewById<Button>(R.id.btnMenu).setOnClickListener { finish() }
@@ -99,11 +102,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
         super.onResume()
         glView.onResume()
         tilt.start()
+        sound?.start()
         hideSystemBars()
     }
 
     override fun onPause() {
         tilt.stop()
+        sound?.stop()
         glView.onPause()
         super.onPause()
     }
@@ -143,6 +148,10 @@ class GameActivity : Activity(), GameRenderer.Listener {
     }
 
     private fun showHud(s: HudState) {
+        sound?.let {
+            it.speed = s.speedKmh / 3.6f
+            if (s.phase != FlightPhase.CRASHED && crashPanel.visibility != View.VISIBLE) it.running = true
+        }
         hudSpeed.text = String.format(Locale.ROOT, "%d km/h", s.speedKmh)
         hudAlt.text = String.format(Locale.ROOT, "výška %d m · nad zemí %d m", s.altitude, s.agl)
         hudTime.text = "let " + formatTime(s.airTime)
@@ -170,6 +179,10 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     override fun onCrash(result: FlightResult) {
         runOnUiThread { showCrash(result) }
+    }
+
+    override fun onImpact() {
+        sound?.explode()
     }
 
     private fun showCrash(r: FlightResult) {

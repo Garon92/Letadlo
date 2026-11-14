@@ -83,15 +83,31 @@
             </LinearLayout>
         </LinearLayout>
 
-        <CheckBox
-            android:id="@+id/invertPitch"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:buttonTint="@color/white"
-            android:text="@string/invert_pitch"
-            android:textColor="@color/white"
-            android:textSize="15sp" />
+            android:orientation="horizontal">
+
+            <CheckBox
+                android:id="@+id/invertPitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/white"
+                android:text="@string/invert_pitch"
+                android:textColor="@color/white"
+                android:textSize="15sp" />
+
+            <CheckBox
+                android:id="@+id/sound"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:buttonTint="@color/white"
+                android:text="@string/sound"
+                android:textColor="@color/white"
+                android:textSize="15sp" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

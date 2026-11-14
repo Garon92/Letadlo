@@ -53,6 +53,7 @@ class GameRenderer(
     interface Listener {
         fun onHud(state: HudState)
         fun onCrash(result: FlightResult)
+        fun onImpact()
     }
 
     val world = World(map)
@@ -101,12 +102,14 @@ class GameRenderer(
     private var hudTimer = 0f
     private var crashTime = 0f
     private var crashReported = false
+    private var impactReported = false
 
     /** Volat na GL vlákně (přes queueEvent). */
     fun restart() {
         flight.reset()
         crashTime = 0f
         crashReported = false
+        impactReported = false
         camInit = false
     }
 
@@ -157,6 +160,10 @@ class GameRenderer(
         for (i in 0 until sub) flight.update(dt / sub, roll, pitch)
 
         if (flight.phase == FlightPhase.CRASHED) {
+            if (!impactReported) {
+                impactReported = true
+                listener.onImpact()
+            }
             crashTime += dt
             if (!crashReported && crashTime > 1.1f) {
                 crashReported = true
@@ -288,8 +295,8 @@ class GameRenderer(
             World.RUNWAY_HALF_WIDTH, World.RUNWAY_HALF_LENGTH,
         )
         p.set("uRunwayY", world.airportHeight)
-        p.set("uCity", World.CITY_X, World.CITY_Z, if (world.hasCity) World.CITY_RADIUS else 0f, World.CITY_HEIGHT)
-        p.set("uCityGrid", World.BLOCK, World.ROAD)
+        p.set("uCity", World.CITY_X, World.CITY_Z, if (world.hasCity) World.CITY_ROAD_RADIUS else 0f, World.CITY_HEIGHT)
+        p.set("uCityGrid", World.BLOCK, World.ROAD, World.CITY_RADIUS - 100f, 0f)
         p.set("uTint", 1f, 1f, 1f, 1f)
         p.set("uTime", time)
 
@@ -300,6 +307,7 @@ class GameRenderer(
         p.set("uMode", Shaders.MODE_OBJECTS)
         chunks.drawObjects(camX, camZ, fwdX, fwdZ, 2300f, maxDist)
         airport.draw()
+        chunks.drawClouds(camX, camZ, fwdX, fwdZ, maxDist)
 
         p.set("uMode", Shaders.MODE_WATER)
         Matrix.setIdentityM(model, 0)

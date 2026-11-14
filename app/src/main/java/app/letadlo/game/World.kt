@@ -24,6 +24,19 @@ class Tree(
     val conifer: Boolean, val shade: Float,
 )
 
+/** Domek se sedlovou střechou (vesnice, předměstí). Hřeben vede podél X nebo Z. */
+class House(
+    val x: Float, val y: Float, val z: Float,
+    val halfW: Float, val halfD: Float,
+    val wallH: Float, val roofH: Float,
+    val ridgeAlongX: Boolean,
+    val wr: Float, val wg: Float, val wb: Float,
+    val rr: Float, val rg: Float, val rb: Float,
+)
+
+/** Jeden „chuchvalec" mraku (zploštělá koule). */
+class Cloud(val x: Float, val y: Float, val z: Float, val rx: Float, val ry: Float, val shade: Float)
+
 enum class ObstacleKind { BUILDING, TREE }
 
 /** Vše, co je potřeba pro vykreslení a kolize jednoho čtverce mapy. */
@@ -38,6 +51,8 @@ class ChunkContent(
     val colors: FloatArray,
     val buildings: List<Box>,
     val trees: List<Tree>,
+    val houses: List<House>,
+    val clouds: List<Cloud>,
 ) {
     fun h(i: Int, j: Int): Float = heights[j * World.VERTS + i]
 }
@@ -65,6 +80,9 @@ class World(val map: MapType) {
         const val CITY_HEIGHT = 30f
         const val BLOCK = 150f
         const val ROAD = 22f
+        /** Kam až sahají ulice (za centrem jsou předměstí s domky). */
+        const val CITY_ROAD_RADIUS = CITY_RADIUS + 850f
+        const val VILLAGE_CELL = 2600f
 
         private const val TREE_GRID = 40f
         private const val TREES_PER_SIDE = 16 // CHUNK / TREE_GRID
@@ -134,7 +152,7 @@ class World(val map: MapType) {
         val dc = sqrt(dcx * dcx + dcz * dcz)
         var h = 35f + Noise.fbm(x / 3000f, z / 3000f, 4, 41) * 60f
         h += Noise.ridged(x / 4000f, z / 4000f, 4, 43).pow(2f) * 520f * smoothstep(5000f, 12000f, dc)
-        h = lerp(CITY_HEIGHT, h, smoothstep(CITY_RADIUS, CITY_RADIUS + 1200f, dc))
+        h = lerp(CITY_HEIGHT, h, smoothstep(CITY_ROAD_RADIUS + 60f, CITY_ROAD_RADIUS + 1200f, dc))
         val d = abs(x - riverX(z))
         return lerp(-7f, h, smoothstep(55f, 130f, d))
     }
@@ -187,7 +205,7 @@ class World(val map: MapType) {
         return when (map) {
             MapType.MOUNTAINS -> smoothstep(-0.08f, 0.08f, f)
             MapType.COUNTRYSIDE -> smoothstep(0.12f, 0.22f, f)
-            MapType.CITY -> if (distToCity(x, z) < CITY_RADIUS + 400f) 0f else smoothstep(0.10f, 0.20f, f)
+            MapType.CITY -> if (distToCity(x, z) < CITY_ROAD_RADIUS + 300f) 0f else smoothstep(0.10f, 0.20f, f)
         }
     }
 
@@ -219,7 +237,7 @@ class World(val map: MapType) {
                 b = lerp(b, 0.99f, snow)
             }
             MapType.CITY -> {
-                if (distToCity(x, z) < CITY_RADIUS + 60f && abs(h - CITY_HEIGHT) < 1f) {
+                if (distToCity(x, z) < CITY_ROAD_RADIUS + 60f && abs(h - CITY_HEIGHT) < 1f) {
                     r = 0.55f; g = 0.55f; b = 0.54f
                 }
             }
@@ -302,9 +320,13 @@ class World(val map: MapType) {
 
         val trees = ArrayList<Tree>()
         val buildings = ArrayList<Box>()
-        if (hasCity) placeCity(cx, cz, heights, buildings, trees)
+        val houses = ArrayList<House>()
+        val clouds = ArrayList<Cloud>()
+        if (hasCity) placeCity(cx, cz, heights, buildings, trees, houses)
+        placeVillages(cx, cz, houses)
         placeTrees(cx, cz, heights, normals, trees)
-        return ChunkContent(cx, cz, heights, normals, colors, buildings, trees)
+        placeClouds(cx, cz, clouds)
+        return ChunkContent(cx, cz, heights, normals, colors, buildings, trees, houses, clouds)
     }
 
     private fun localHeight(heights: FloatArray, cx: Int, cz: Int, x: Float, z: Float): Float {
@@ -333,6 +355,7 @@ class World(val map: MapType) {
                     !(abs(x) < 240f && abs(z) < 3500f)
                 ) f = 0.025f
                 if (chance >= f) continue
+                if (inVillage(x, z, 18f)) continue
                 val h = localHeight(heights, cx, cz, x, z)
                 if (h < SEA_LEVEL + 1.5f) continue
                 val vi = ((x - cx * CHUNK) / CELL).toInt().coerceIn(0, CELLS)
@@ -353,7 +376,10 @@ class World(val map: MapType) {
         }
     }
 
-    private fun placeCity(cx: Int, cz: Int, heights: FloatArray, buildings: MutableList<Box>, trees: MutableList<Tree>) {
+    private fun placeCity(
+        cx: Int, cz: Int, heights: FloatArray,
+        buildings: MutableList<Box>, trees: MutableList<Tree>, houses: MutableList<House>,
+    ) {
         val x0 = cx * CHUNK
         val z0 = cz * CHUNK
         // chunk vlastní bloky, jejichž roh leží uvnitř něj
@@ -363,7 +389,7 @@ class World(val map: MapType) {
         while (CITY_Z + bz * BLOCK < z0 + CHUNK) {
             var bx = bxStart
             while (CITY_X + bx * BLOCK < x0 + CHUNK) {
-                placeBlock(bx, bz, buildings, trees)
+                placeBlock(bx, bz, buildings, trees, houses)
                 bx++
             }
             bz++
@@ -385,16 +411,29 @@ class World(val map: MapType) {
         floatArrayOf(0.36f, 0.50f, 0.52f),
     )
 
-    private fun placeBlock(bx: Int, bz: Int, buildings: MutableList<Box>, trees: MutableList<Tree>) {
+    private fun placeBlock(bx: Int, bz: Int, buildings: MutableList<Box>, trees: MutableList<Tree>, houses: MutableList<House>) {
         val minX = CITY_X + bx * BLOCK + ROAD + 4f
         val minZ = CITY_Z + bz * BLOCK + ROAD + 4f
         val inner = BLOCK - ROAD - 8f
         val centerX = minX + inner / 2f
         val centerZ = minZ + inner / 2f
         val dc = distToCity(centerX, centerZ)
-        if (dc > CITY_RADIUS - 120f) return
+        if (dc > CITY_ROAD_RADIUS - 90f) return
         if (abs(centerX - riverX(centerZ)) < 210f) return
         if (airportWeight(centerX, centerZ) > 0f) return
+        if (dc > CITY_RADIUS - 120f) {
+            // předměstí: rodinné domky na menších parcelách
+            for (j in 0 until 3) for (i in 0 until 3) {
+                if (i == 1 && j == 1) continue
+                val hx = bx * 3 + i
+                val hz = bz * 3 + j
+                if (Noise.hash01(hx, hz, 40) < 0.18f) continue
+                val px = minX + 20f + i * 40f + (Noise.hash01(hx, hz, 41) - 0.5f) * 6f
+                val pz = minZ + 20f + j * 40f + (Noise.hash01(hx, hz, 42) - 0.5f) * 6f
+                houses.add(makeHouse(px, CITY_HEIGHT, pz, Noise.hash01(hx, hz, 43), Noise.hash01(hx, hz, 44), Noise.hash01(hx, hz, 45) < 0.5f))
+            }
+            return
+        }
         val t = 1f - dc / CITY_RADIUS
         val ground = CITY_HEIGHT
 
@@ -445,6 +484,163 @@ class World(val map: MapType) {
         }
     }
 
+    // ------------------------------------------------------------------ vesnice
+
+    private class Village(val x: Float, val z: Float, val radius: Float, val vx: Int, val vz: Int, val alongX: Boolean)
+
+    private val noVillage = Any()
+    private val villageCache = ConcurrentHashMap<Long, Any>()
+
+    private fun villageInCell(vx: Int, vz: Int): Village? {
+        val k = key(vx, vz)
+        val cached = villageCache[k]
+        if (cached != null) return cached as? Village
+        val v = computeVillage(vx, vz)
+        villageCache[k] = v ?: noVillage
+        return v
+    }
+
+    private fun computeVillage(vx: Int, vz: Int): Village? {
+        val chance = when (map) {
+            MapType.COUNTRYSIDE -> 0.6f
+            MapType.CITY -> 0.4f
+            MapType.MOUNTAINS -> 0.4f
+        }
+        if (Noise.hash01(vx, vz, 201) >= chance) return null
+        val x = (vx + 0.25f + 0.5f * Noise.hash01(vx, vz, 202)) * VILLAGE_CELL
+        val z = (vz + 0.25f + 0.5f * Noise.hash01(vx, vz, 203)) * VILLAGE_CELL
+        val radius = 150f + 130f * Noise.hash01(vx, vz, 204)
+        if (airportWeight(x, z) > 0f) return null
+        if (abs(x) < 400f + radius && abs(z) < 3500f) return null
+        if (map == MapType.CITY && distToCity(x, z) < CITY_ROAD_RADIUS + 600f + radius) return null
+        if (map == MapType.CITY && abs(x - riverX(z)) < 250f + radius) return null
+        val h = rawHeight(x, z)
+        if (h < SEA_LEVEL + 4f) return null
+        if (map == MapType.MOUNTAINS && h > 750f) return null
+        val slope = abs(rawHeight(x + 80f, z) - rawHeight(x - 80f, z)) + abs(rawHeight(x, z + 80f) - rawHeight(x, z - 80f))
+        if (slope > 45f) return null
+        return Village(x, z, radius, vx, vz, Noise.hash01(vx, vz, 205) < 0.5f)
+    }
+
+    /** Leží bod uvnitř některé vesnice (plus okraj)? */
+    fun inVillage(x: Float, z: Float, margin: Float): Boolean {
+        val v = villageInCell(floor(x / VILLAGE_CELL).toInt(), floor(z / VILLAGE_CELL).toInt()) ?: return false
+        val dx = x - v.x
+        val dz = z - v.z
+        val r = v.radius + margin
+        return dx * dx + dz * dz < r * r
+    }
+
+    private val wallPalette = arrayOf(
+        floatArrayOf(0.95f, 0.94f, 0.90f),
+        floatArrayOf(0.93f, 0.86f, 0.68f),
+        floatArrayOf(0.94f, 0.80f, 0.70f),
+        floatArrayOf(0.86f, 0.88f, 0.84f),
+        floatArrayOf(0.97f, 0.91f, 0.78f),
+    )
+    private val roofPalette = arrayOf(
+        floatArrayOf(0.66f, 0.24f, 0.16f),
+        floatArrayOf(0.58f, 0.20f, 0.14f),
+        floatArrayOf(0.42f, 0.27f, 0.20f),
+        floatArrayOf(0.30f, 0.31f, 0.34f),
+    )
+
+    private fun makeHouse(x: Float, y: Float, z: Float, r1: Float, r2: Float, ridgeAlongX: Boolean): House {
+        val wall = wallPalette[(r1 * wallPalette.size).toInt().coerceAtMost(wallPalette.size - 1)]
+        val roof = roofPalette[(r2 * roofPalette.size).toInt().coerceAtMost(roofPalette.size - 1)]
+        val long = 5f + 2.5f * r2
+        val short = 3.8f + 1.4f * r1
+        return House(
+            x, y, z,
+            if (ridgeAlongX) long else short, if (ridgeAlongX) short else long,
+            4.8f + 2.5f * r1 * r2, 3.2f + 1.5f * r1,
+            ridgeAlongX,
+            wall[0], wall[1], wall[2], roof[0], roof[1], roof[2],
+        )
+    }
+
+    private fun placeVillages(cx: Int, cz: Int, out: MutableList<House>) {
+        val x0 = cx * CHUNK
+        val z0 = cz * CHUNK
+        val vx0 = floor((x0 - 400f) / VILLAGE_CELL).toInt()
+        val vx1 = floor((x0 + CHUNK + 400f) / VILLAGE_CELL).toInt()
+        val vz0 = floor((z0 - 400f) / VILLAGE_CELL).toInt()
+        val vz1 = floor((z0 + CHUNK + 400f) / VILLAGE_CELL).toInt()
+        for (vz in vz0..vz1) for (vx in vx0..vx1) {
+            val v = villageInCell(vx, vz) ?: continue
+            if (v.x + v.radius + 30f < x0 || v.x - v.radius - 30f > x0 + CHUNK) continue
+            if (v.z + v.radius + 30f < z0 || v.z - v.radius - 30f > z0 + CHUNK) continue
+            villageHouses(v) { h ->
+                if (h.x >= x0 && h.x < x0 + CHUNK && h.z >= z0 && h.z < z0 + CHUNK) out.add(h)
+            }
+        }
+    }
+
+    private inline fun villageHouses(v: Village, add: (House) -> Unit) {
+        val spacing = 24f
+        val n = (v.radius / spacing).toInt()
+        var idx = 0
+        for (street in 0..1) {
+            val len = if (street == 0) n else n / 2 + 1
+            val streetAlongX = v.alongX != (street == 1)
+            for (k in -len..len) {
+                if (k == 0) continue
+                for (side in -1..1 step 2) {
+                    idx++
+                    val sx = v.vx * 1009 + idx
+                    val sz = v.vz * 917 + street
+                    if (Noise.hash01(sx, sz, 210) < 0.2f) continue
+                    val along = k * spacing + (Noise.hash01(sx, sz, 211) - 0.5f) * 6f
+                    val off = side * (13f + Noise.hash01(sx, sz, 212) * 6f)
+                    val hx = if (streetAlongX) v.x + along else v.x + off
+                    val hz = if (streetAlongX) v.z + off else v.z + along
+                    val base = groundBase(hx, hz, 6f)
+                    if (base < SEA_LEVEL + 1f) continue
+                    val ridgeAlongX = if (Noise.hash01(sx, sz, 213) < 0.65f) streetAlongX else !streetAlongX
+                    add(makeHouse(hx, base, hz, Noise.hash01(sx, sz, 214), Noise.hash01(sx, sz, 215), ridgeAlongX))
+                }
+            }
+        }
+        // kostel s věží na rohu návsi
+        val chx = v.x + 24f
+        val chz = v.z + 26f
+        val cb = groundBase(chx, chz, 12f)
+        if (cb > SEA_LEVEL + 1f) {
+            add(House(chx, cb, chz, 6.5f, 12f, 10f, 6.5f, false, 0.96f, 0.95f, 0.9f, 0.32f, 0.33f, 0.36f))
+            add(House(chx, cb, chz + 15f, 3.2f, 3.2f, 22f, 10f, true, 0.96f, 0.95f, 0.9f, 0.20f, 0.42f, 0.36f))
+        }
+    }
+
+    /** Nejnižší bod terénu pod půdorysem (aby dům nevisel ve vzduchu). */
+    private fun groundBase(x: Float, z: Float, r: Float): Float =
+        min(min(groundHeight(x - r, z - r), groundHeight(x + r, z - r)), min(groundHeight(x - r, z + r), groundHeight(x + r, z + r)))
+
+    // ------------------------------------------------------------------ mraky
+
+    private fun placeClouds(cx: Int, cz: Int, out: MutableList<Cloud>) {
+        for (k in 0 until 2) {
+            if (Noise.hash01(cx, cz, 301 + k) > (if (k == 0) 0.4f else 0.12f)) continue
+            val ccx = (cx + 0.15f + 0.7f * Noise.hash01(cx, cz, 311 + k)) * CHUNK
+            val ccz = (cz + 0.15f + 0.7f * Noise.hash01(cx, cz, 313 + k)) * CHUNK
+            val hb = Noise.hash01(cx, cz, 315 + k)
+            val base = if (map == MapType.MOUNTAINS) 2300f + 500f * hb else 1050f + 450f * hb
+            val puffs = 4 + (Noise.hash01(cx, cz, 317 + k) * 5f).toInt()
+            for (p in 0 until puffs) {
+                val hx = cx * 31 + p
+                val hz = cz * 17 + k
+                val r = 40f + 50f * Noise.hash01(hx, hz, 323)
+                out.add(
+                    Cloud(
+                        ccx + (Noise.hash01(hx, hz, 321) - 0.5f) * 230f,
+                        base + Noise.hash01(hx, hz, 324) * 35f,
+                        ccz + (Noise.hash01(hx, hz, 322) - 0.5f) * 160f,
+                        r, r * 0.62f, 0.92f + 0.08f * Noise.hash01(hx, hz, 325),
+                    )
+                )
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ kolize
 
     /** Letištní budovy vedle dráhy (hangáry, věž, terminál). */
@@ -472,14 +668,19 @@ class World(val map: MapType) {
             }
         }
         val cxa = chunkOf(x - BLOCK - 10f)
-        val cxb = chunkOf(x + 10f)
+        val cxb = chunkOf(x + 25f)
         val cza = chunkOf(z - BLOCK - 10f)
-        val czb = chunkOf(z + 10f)
+        val czb = chunkOf(z + 25f)
         for (cz in cza..czb) for (cx in cxa..cxb) {
             val c = content(cx, cz)
             for (bld in c.buildings) {
                 if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.maxY &&
                     z + r > bld.minZ && z - r < bld.maxZ
+                ) return ObstacleKind.BUILDING
+            }
+            for (h in c.houses) {
+                if (abs(x - h.x) < h.halfW + r && abs(z - h.z) < h.halfD + r &&
+                    y - r < h.y + h.wallH + h.roofH * 0.6f && y + r > h.y - 1f
                 ) return ObstacleKind.BUILDING
             }
             for (t in c.trees) {
