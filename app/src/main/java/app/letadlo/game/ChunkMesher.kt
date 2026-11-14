@@ -1,5 +1,7 @@
 package app.letadlo.game
 
+import kotlin.math.min
+
 /** Hotové sítě jednoho chunku (CPU strana). */
 class ChunkMeshes(
     val cx: Int,
@@ -93,6 +95,10 @@ object ChunkMesher {
     }
 
     fun addTree(mb: MeshBuilder, t: Tree) {
+        if (t.burnt) {
+            addBurntTree(mb, t)
+            return
+        }
         val s = t.shade
         when (t.kind) {
             PropKind.ROCK -> {
@@ -147,6 +153,26 @@ object ChunkMesher {
         }
     }
 
+    /** Ohořelý strom: černý kmen a zbytek tmavé koruny (keře a zvířata jen zčernají). */
+    private fun addBurntTree(mb: MeshBuilder, t: Tree) {
+        val c = 0.07f
+        when (t.kind) {
+            PropKind.BUSH, PropKind.COW, PropKind.SHEEP -> {
+                mb.blob(t.x, t.y + 0.3f, t.z, t.radius * 0.6f, 0.5f, 5, c, c, c)
+                return
+            }
+            PropKind.ROCK -> return
+            else -> Unit
+        }
+        val tw = 0.2f + t.height * 0.02f
+        mb.box(t.x - tw, t.y, t.z - tw, t.x + tw, t.y + t.height * 0.75f, t.z + tw, 0.08f, 0.07f, 0.06f, bottom = false)
+        if (t.conifer) {
+            mb.cone(t.x, t.y + t.height * 0.35f, t.z, t.radius * 0.45f, t.height * 0.6f, 5, c, c * 0.9f, c * 0.8f)
+        } else {
+            mb.blob(t.x, t.y + t.height * 0.7f, t.z, t.radius * 0.5f, t.radius * 0.45f, 5, c, c * 0.9f, c * 0.8f)
+        }
+    }
+
     /** Věž a gondola elektrárny (lopatky se kreslí zvlášť, protože se točí). */
     fun addTurbineTower(mb: MeshBuilder, t: Turbine) {
         mb.cylinderY(t.x, t.y, t.z, 2.2f, t.y + t.hubHeight, 1.3f, 8, 0.92f, 0.92f, 0.92f)
@@ -158,6 +184,10 @@ object ChunkMesher {
         val mb = MeshBuilder(list.size * 24 + houses.size * 34 + turbines.size * 60 + 4)
         for (t in turbines) addTurbineTower(mb, t)
         for (b in list) {
+            if (b.destroyed) {
+                addRubble(mb, b.minX, b.minY, b.minZ, b.maxX, b.top, b.maxZ)
+                continue
+            }
             mb.box(
                 b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ,
                 b.r, b.g, b.b, if (b.windows) 0.5f else 1f,
@@ -168,7 +198,28 @@ object ChunkMesher {
         return mb.build()
     }
 
+    /** Ohořelé trosky: nízká hromada a pár kusů suti. */
+    private fun addRubble(mb: MeshBuilder, minX: Float, minY: Float, minZ: Float, maxX: Float, top: Float, maxZ: Float) {
+        val inset = min((maxX - minX), (maxZ - minZ)) * 0.08f
+        mb.box(minX + inset, minY, minZ + inset, maxX - inset, top, maxZ - inset,
+            0.16f, 0.14f, 0.12f, 1f, 0.09f, 0.08f, 0.07f, bottom = false)
+        val cx = (minX + maxX) / 2f
+        val cz = (minZ + maxZ) / 2f
+        val sx = (maxX - minX) * 0.3f
+        val sz = (maxZ - minZ) * 0.3f
+        for (k in 0 until 4) {
+            val ox = if (k % 2 == 0) -sx else sx
+            val oz = if (k < 2) -sz else sz
+            val r = min(sx, sz) * 0.55f
+            mb.blob(cx + ox, top, cz + oz, r, r * 0.7f, 5, 0.22f, 0.2f, 0.18f)
+        }
+    }
+
     fun addHouse(mb: MeshBuilder, h: House) {
+        if (h.destroyed) {
+            addRubble(mb, h.x - h.halfW, h.y - 1f, h.z - h.halfD, h.x + h.halfW, h.top, h.z + h.halfD)
+            return
+        }
         val x0 = h.x - h.halfW
         val x1 = h.x + h.halfW
         val z0 = h.z - h.halfD

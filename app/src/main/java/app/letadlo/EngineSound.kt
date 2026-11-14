@@ -48,6 +48,19 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         running = false
     }
 
+    @Volatile private var launchRequested = false
+    @Volatile private var smallBoomRequested = false
+
+    /** Syknutí odpálené rakety. */
+    fun launch() {
+        launchRequested = true
+    }
+
+    /** Výbuch rakety (motor běží dál). */
+    fun boom() {
+        smallBoomRequested = true
+    }
+
     private fun loop() {
         val rate = 22050
         val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -91,11 +104,20 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         var boom = 0.0
         var boomLp = 0.0
         var roar = 0.0
+        var hiss = 0.0
         try {
             while (alive) {
                 if (boomRequested) {
                     boomRequested = false
                     boom = 1.0
+                }
+                if (smallBoomRequested) {
+                    smallBoomRequested = false
+                    boom = maxOf(boom, 0.55)
+                }
+                if (launchRequested) {
+                    launchRequested = false
+                    hiss = 1.0
                 }
                 val v = speed.toDouble()
                 val on = running
@@ -133,6 +155,10 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
                     } else {
                         s *= 0.72 + 0.28 * sin(twoPi * chug)
                         out = s * vol + wind * windVol * 3.0
+                    }
+                    if (hiss > 0.001) {
+                        out += (rnd.nextDouble() * 2.0 - 1.0) * hiss * 0.45
+                        hiss *= 0.99965
                     }
                     if (boom > 0.0003) {
                         boomLp = boomLp * 0.93 + (rnd.nextDouble() * 2.0 - 1.0) * 0.07

@@ -92,6 +92,29 @@ class GameActivity : Activity(), GameRenderer.Listener {
             Records.setCockpit(this, renderer.cockpit)
             updateToggleIcons()
         }
+        val btnFire = findViewById<TextView>(R.id.btnFire)
+        if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER) {
+            btnFire.visibility = View.VISIBLE
+            if (aircraft == AircraftType.BOMBER) {
+                btnFire.text = "💣"
+                btnFire.contentDescription = "Shodit bombu"
+            }
+            // drž = střílí bez omezení
+            btnFire.setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        renderer.combat.trigger = true
+                        v.isPressed = true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        renderer.combat.trigger = false
+                        v.isPressed = false
+                        v.performClick()
+                    }
+                }
+                true
+            }
+        }
         btnTime.setOnClickListener {
             renderer.night = !renderer.night
             updateToggleIcons()
@@ -214,6 +237,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     override fun onMinimap(pixels: IntArray, size: Int, centerX: Float, centerZ: Float, metersPerPixel: Float) {
         runOnUiThread { miniMap.setImage(pixels, size, centerX, centerZ, metersPerPixel) }
+    }
+
+    override fun onWeapons(launches: Int, booms: Int) {
+        sound?.let {
+            repeat(launches) { _ -> it.launch() }
+            repeat(booms) { _ -> it.boom() }
+        }
     }
 
     override fun onImpact() {

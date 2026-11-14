@@ -171,6 +171,24 @@ class ChunkManager(private val world: World, private val radius: Int) {
         }
     }
 
+    /** Znovu postaví sítě chunku (např. po zničení budov). */
+    fun rebuild(cx: Int, cz: Int) {
+        val k = World.key(cx, cz)
+        if (!loaded.containsKey(k) || executor.isShutdown) return
+        pending.add(k)
+        try {
+            executor.execute {
+                try {
+                    ready.add(ChunkMesher.build(world, world.content(cx, cz)))
+                } catch (t: Throwable) {
+                    ready.add(ChunkMeshes(cx, cz, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY))
+                }
+            }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            pending.remove(k)
+        }
+    }
+
     /** Projde souřadnice všech načtených chunků. */
     fun forEachLoaded(action: (cx: Int, cz: Int) -> Unit) {
         for (c in loaded.values) action(c.cx, c.cz)

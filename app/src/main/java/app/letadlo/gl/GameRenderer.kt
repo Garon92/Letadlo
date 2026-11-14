@@ -7,6 +7,8 @@ import app.letadlo.game.Agent
 import app.letadlo.game.AircraftMeshes
 import app.letadlo.game.AircraftType
 import app.letadlo.game.ChunkMesher
+import app.letadlo.game.Combat
+import app.letadlo.game.Fire
 import app.letadlo.game.Controls
 import app.letadlo.game.CrashReason
 import app.letadlo.game.DynamicBatch
@@ -18,6 +20,7 @@ import app.letadlo.game.MapType
 import app.letadlo.game.MeshBuilder
 import app.letadlo.game.ParkedAircraft
 import app.letadlo.game.RotorSpec
+import app.letadlo.game.Rot
 import app.letadlo.game.World
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -69,6 +72,7 @@ class GameRenderer(
         fun onHud(state: HudState)
         fun onCrash(result: FlightResult)
         fun onImpact()
+        fun onWeapons(launches: Int, booms: Int)
         fun onMinimap(pixels: IntArray, size: Int, centerX: Float, centerZ: Float, metersPerPixel: Float)
     }
 
@@ -105,6 +109,20 @@ class GameRenderer(
     private val personT = Array(Life.PERSON_VARIANTS) { LifeMeshes.person(it) }
     private val boatT = arrayOf(LifeMeshes.boat(false), LifeMeshes.boat(true))
     private val bladesT = LifeMeshes.turbineBlades(34f)
+    private val rocketT = LifeMeshes.rocket()
+    private val puffLightT = LifeMeshes.puff(false)
+    private val puffDarkT = LifeMeshes.puff(true)
+    private val flameT = LifeMeshes.flame()
+    private val noRotation = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+
+    /** Rakety, výbuchy, zničení. */
+    val combat = Combat(world, life)
+    private val weapon = Combat.weaponFor(aircraft)
+    private val bombT = LifeMeshes.bomb()
+    private val impact = FloatArray(3)
+    private val decalBatch = DynamicBatch(1024)
+    private val decals = DynamicMesh()
+    private lateinit var reticle: GpuMesh
     private val bladeYaw = atan2(World.TURBINE_DIR_X, World.TURBINE_DIR_Z)
 
     private lateinit var worldProg: GlProgram
@@ -165,6 +183,7 @@ class GameRenderer(
     fun restart() {
         flight.reset()
         life.reset()
+        combat.reset()
         chunks.loadNow(flight.x, flight.z, 1)
         crashTime = 0f
         crashReported = false
@@ -197,6 +216,8 @@ class GameRenderer(
         water = GpuMesh(waterQuad(fogEnd + 1500f))
         parked = world.parkedAircraft.map { Triple(it, GpuMesh(AircraftMeshes.body(it.type)), rotorMeshes(it.type)) }
         dynamic.init()
+        decals.init()
+        reticle = GpuMesh(LifeMeshes.reticle())
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
         skyVao = ids[0]
@@ -229,7 +250,10 @@ class GameRenderer(
         if (flight.phase == FlightPhase.CRASHED) {
             if (!impactReported) {
                 impactReported = true
-                victims = life.explode(flight.x, flight.y, flight.z, aircraft.blastRadius)
+                victims = combat.explosion(flight.x, flight.y, flight.z, aircraft.blastRadius)
+                combat.booms = 0 // zvuk havárie obstará onImpact
+                val gy = world.surfaceHeight(flight.x, flight.z)
+                combat.fires.add(Fire(flight.x, gy, flight.z, 3f * camScale))
                 listener.onImpact()
             }
             crashTime += dt
@@ -246,6 +270,16 @@ class GameRenderer(
 
         updateCamera(dt)
         life.update(dt, camX, camZ)
+        combat.update(dt, flight, weapon)
+        if (combat.dirtyChunks.isNotEmpty()) {
+            for (k in combat.dirtyChunks) chunks.rebuild((k shr 32).toInt(), k.toInt())
+            combat.dirtyChunks.clear()
+        }
+        if (combat.launches > 0 || combat.booms > 0) {
+            listener.onWeapons(combat.launches, combat.booms)
+            combat.launches = 0
+            combat.booms = 0
+        }
         chunks.update(camX, camZ)
         buildBatch()
         render()
@@ -463,7 +497,32 @@ class GameRenderer(
                 )
             }
         }
+        // rakety, kouř a plameny
+        for (r in combat.rockets) {
+            val v = sqrt(r.vx * r.vx + r.vy * r.vy + r.vz * r.vz).coerceAtLeast(1f)
+            batch.add(rocketT, r.x, r.y, r.z, Rot.yawFor(r.vx, r.vz), kotlin.math.asin((r.vy / v).coerceIn(-1f, 1f)))
+        }
+        for (bm in combat.bombs) {
+            val v = sqrt(bm.vx * bm.vx + bm.vy * bm.vy + bm.vz * bm.vz).coerceAtLeast(1f)
+            batch.add(bombT, bm.x, bm.y, bm.z, Rot.yawFor(bm.vx, bm.vz), kotlin.math.asin((bm.vy / v).coerceIn(-1f, 1f)))
+        }
+        for (pf in combat.puffs) {
+            if (!near(pf.x, pf.z, 2500f)) continue
+            val k = pf.age / pf.life
+            val sc = if (pf.dark) pf.size * (0.5f + pf.age * 0.9f) * (1f - 0.3f * k) else pf.size * (0.6f + pf.age * 1.8f) * (1f - k)
+            batch.add(if (pf.dark) puffDarkT else puffLightT, pf.x, pf.y, pf.z, pf.age, 0f, 0f, sc)
+        }
+        for (fire in combat.fires) {
+            if (!near(fire.x, fire.z, 3000f)) continue
+            val fade = 1f - fire.age / Combat.FIRE_LIFE
+            val sc = fire.size * 0.55f * fade * (1f + 0.22f * sin(time * 13f + fire.x))
+            batch.add(flameT, fire.x, fire.y, fire.z, time * 0.7f, 0f, 0f, sc)
+        }
         dynamic.upload(batch)
+
+        decalBatch.clear()
+        for (m in combat.scorches) decalBatch.addMatrix(m, noRotation, 0f, 0f, 0f)
+        decals.upload(decalBatch)
     }
 
     // ------------------------------------------------------------------ vykreslení
@@ -565,7 +624,9 @@ class GameRenderer(
 
         // odstavená letadla, auta, lidé, ptáci, lodě
         p.set("uMode", Shaders.MODE_PLANE)
-        for ((pa, mesh, rot) in parked) {
+        for ((i, entry) in parked.withIndex()) {
+            if (world.parkedDestroyed[i]) continue
+            val (pa, mesh, rot) = entry
             val gy = world.airportHeight + pa.type.gearHeight
             Matrix.setIdentityM(model, 0)
             Matrix.translateM(model, 0, pa.x, gy, pa.z)
@@ -591,6 +652,14 @@ class GameRenderer(
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glDepthMask(false)
 
+        // ohořelá zem po výbuších
+        p.set("uMode", Shaders.MODE_DECAL)
+        p.setMatrix("uModel", identity)
+        GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL)
+        GLES30.glPolygonOffset(-2f, -4f)
+        decals.draw()
+        GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
+
         // stín pod letadlem
         val agl = f.altitudeAgl
         if (!crashed && agl < 220f) {
@@ -607,12 +676,13 @@ class GameRenderer(
             GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
         }
 
-        if (crashed) drawExplosion(p)
+        for (b in combat.blasts) drawBlast(p, b.x, b.y, b.z, b.age, b.size)
 
         GLES30.glDepthMask(true)
         GLES30.glDisable(GLES30.GL_BLEND)
 
         if (inCockpit) drawCockpit(p)
+        if (weapon != app.letadlo.game.Weapon.NONE && !crashed) drawReticle(p)
         GLES30.glBindVertexArray(0)
     }
 
@@ -664,18 +734,59 @@ class GameRenderer(
         cockpitMesh.draw()
     }
 
-    private fun drawExplosion(p: GlProgram) {
+    /** Průhledný zelený zaměřovač v místě, kam míří nos (a kam poletí rakety). */
+    private fun drawReticle(p: GlProgram) {
         val f = flight
+        Matrix.multiplyMM(viewProj, 0, proj, 0, view, 0)
+        p.setMatrix("uViewProj", viewProj)
+        p.set("uCamPos", camX, camY, camZ)
+        Matrix.setIdentityM(model, 0)
+        if (weapon == app.letadlo.game.Weapon.BOMBS) {
+            // bombardér: kruh na zemi tam, kam by teď bomba dopadla (velikost = dosah ničení)
+            if (!combat.predictBombImpact(f, impact)) return
+            val s = Combat.BOMB_BLAST * 0.42f
+            model[0] = s
+            model[5] = 0f
+            model[6] = -s
+            model[9] = s
+            model[10] = 0f
+            model[12] = impact[0]; model[13] = impact[1] + 1f; model[14] = impact[2]
+        } else {
+            val d = 900f
+            val cp = cos(f.pitch)
+            val ax = f.x + sin(f.heading) * cp * d
+            val ay = f.y + sin(f.pitch) * d
+            val az = f.z - cos(f.heading) * cp * d
+            val dx = ax - camX
+            val dy = ay - camY
+            val dz = az - camZ
+            val s = sqrt(dx * dx + dy * dy + dz * dz) * 0.028f
+            // billboard natočený ke kameře (pravá a horní osa z pohledové matice)
+            model[0] = view[0] * s; model[1] = view[4] * s; model[2] = view[8] * s
+            model[4] = view[1] * s; model[5] = view[5] * s; model[6] = view[9] * s
+            model[8] = view[2] * s; model[9] = view[6] * s; model[10] = view[10] * s
+            model[12] = ax; model[13] = ay; model[14] = az
+        }
+        p.setMatrix("uModel", model)
         p.set("uMode", Shaders.MODE_EFFECT)
-        val t = crashTime
-        val s = 0.7f + 0.3f * camScale
+        p.set("uTint", 0.35f, 1f, 0.45f, 0.72f)
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        reticle.draw()
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+    }
+
+    private fun drawBlast(p: GlProgram, bx: Float, by: Float, bz: Float, t: Float, s: Float) {
+        p.set("uMode", Shaders.MODE_EFFECT)
         val grow = World.smoothstep(0f, 0.6f, t)
         val fireAlpha = 1f - World.smoothstep(0.4f, 1.8f, t)
         if (fireAlpha > 0.01f) {
-            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, (4f + 20f * grow) * s)
+            ballAt(p, bx, by + 2f + t * 3f, bz, (4f + 20f * grow) * s)
             p.set("uTint", 1f, 0.5f, 0.12f, fireAlpha * 0.85f)
             ball.draw()
-            ballAt(p, f.x, f.y + 2f + t * 3f, f.z, (2f + 11f * grow) * s)
+            ballAt(p, bx, by + 2f + t * 3f, bz, (2f + 11f * grow) * s)
             p.set("uTint", 1f, 0.9f, 0.45f, fireAlpha)
             ball.draw()
         }
@@ -685,7 +796,7 @@ class GameRenderer(
             val a = 0.5f * (1f - World.smoothstep(2.5f, 8f, st))
             if (a <= 0.01f) continue
             val drift = i * 2.3f
-            ballAt(p, f.x + sin(i * 2.1f) * drift, f.y + 4f + st * 7f + i * 2f, f.z + cos(i * 1.7f) * drift, (6f + st * 4.5f) * s)
+            ballAt(p, bx + sin(i * 2.1f) * drift * s, by + 4f + st * 7f + i * 2f, bz + cos(i * 1.7f) * drift * s, (6f + st * 4.5f) * s)
             if (night) p.set("uTint", 0.12f, 0.1f, 0.09f, a) else p.set("uTint", 0.22f, 0.21f, 0.2f, a)
             ball.draw()
         }

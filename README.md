@@ -19,21 +19,26 @@ Na telefonu povol instalaci z neznámých zdrojů a APK otevři. Vyžaduje Andro
 4. Natáčení telefonu jako volantem (nebo náklon do strany) = zatáčka.
    Horní hrana k sobě = stoupání, od sebe = klesání.
 5. Ťuknutím na obrazovku telefon kdykoli znovu zkalibruješ.
-6. Kulatá tlačítka vpravo: **✈️ / 💺** přepíná pohled zvenku a z kabiny, **☀️ / 🌙** den a noc.
-7. Náraz do země, hory, budovy, stromů, elektrárny nebo pád do vody let ukončí.
+6. Kulatá tlačítka vpravo dole: **✈️ / 💺** přepíná pohled zvenku a z kabiny, **☀️ / 🌙** den a noc.
+   Vpravo nahoře je průhledná mapa okolí natočená ve směru letu.
+7. **Stíhačka** má vlevo tlačítko 🚀 – dokud ho držíš, neomezeně pálí rakety přesně do zeleného zaměřovače.
+   **Bombardér** má tlačítko 💣 – shazuje silné bomby, zelený kruh na zemi ukazuje, kam dopadnou.
+   Výbuchy rozházejí auta a lidi, zbortí budovy a domy, spálí stromy a zanechají ohořelou zem a hořící trosky.
+8. Náraz do země, hory, budovy, stromů, elektrárny nebo pád do vody let ukončí.
    Měkké dosednutí na dráhu je přistání – můžeš zase vzlétnout. Vrtulník přistane na jakékoli rovině.
 
-V menu jde zapnout **Obrátit výškovku** a vypnout **Zvuk motoru**.
+V menu je posuvník **citlivosti náklonu** (výchozí: plná zatáčka už při ~15° náklonu telefonu),
+volba **Obrátit výškovku** a vypínač **Zvuku motoru**.
 
 ## Letadla
 
 | Letadlo | Vlastnosti |
 | --- | --- |
-| 🛩️ Sportovní | krátký rozjezd, klidné a snadné |
-| ⚡ Stíhačka | přes 600 km/h, ostré zatáčky, přídavné spalování |
-| ✈️ Dopravní | dlouhý rozjezd, pomalé zatáčky, dva motory pod křídly |
-| 🚁 Vrtulník | svislý vzlet, přistání kdekoli, náklon k sobě = stoupání |
-| 💣 Bombardér | čtyři vrtule, těžký a stabilní |
+| 🛩️ Sportovní | ~300 km/h, krátký rozjezd, klidné a snadné |
+| ⚡ Stíhačka | ~2 200 km/h, ostré zatáčky, rakety a zaměřovač |
+| ✈️ Dopravní | ~840 km/h, dlouhý rozjezd, pomalé zatáčky |
+| 🚁 Vrtulník | ~270 km/h, svislý vzlet, přistání kdekoli, náklon k sobě = stoupání |
+| 💣 Bombardér | ~480 km/h, čtyři vrtule, neomezené bomby |
 
 ## Mapy
 

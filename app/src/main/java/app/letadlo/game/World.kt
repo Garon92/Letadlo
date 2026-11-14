@@ -16,7 +16,12 @@ class Box(
     val maxX: Float, val maxY: Float, val maxZ: Float,
     val r: Float, val g: Float, val b: Float,
     val windows: Boolean,
-)
+) {
+    /** Zničená budova – zbydou nízké ohořelé trosky. */
+    @Volatile var destroyed = false
+
+    val top: Float get() = if (destroyed) minY + 2f + min(7f, (maxY - minY) * 0.1f) else maxY
+}
 
 /** Druh drobného objektu v krajině. Kolize mají jen stromy a balvany. */
 enum class PropKind(val collides: Boolean) {
@@ -30,6 +35,9 @@ class Tree(
     val yaw: Float = 0f,
 ) {
     val conifer: Boolean get() = kind == PropKind.CONIFER
+
+    /** Ohořelý strom po výbuchu. */
+    @Volatile var burnt = false
 }
 
 /** Letadlo zaparkované u hangárů. Yaw: příď (-Z šablony) otočená pomocí Ry(yaw). */
@@ -46,7 +54,14 @@ class House(
     val ridgeAlongX: Boolean,
     val wr: Float, val wg: Float, val wb: Float,
     val rr: Float, val rg: Float, val rb: Float,
-)
+) {
+    @Volatile var destroyed = false
+
+    val top: Float get() = if (destroyed) y + 1.5f else y + wallH + roofH * 0.6f
+}
+
+/** Co výbuch zničil: chunky k přestavění a místa, kde hoří trosky. */
+class DamageReport(val chunks: List<Long>, val fires: List<FloatArray>, val anything: Boolean)
 
 /** Jeden „chuchvalec" mraku (zploštělá koule). */
 class Cloud(val x: Float, val y: Float, val z: Float, val rx: Float, val ry: Float, val shade: Float)
@@ -352,6 +367,9 @@ class World(val map: MapType) {
         val turbines = ArrayList<Turbine>()
         placeHerdsAndRocks(cx, cz, heights, normals, trees)
         placeTurbines(cx, cz, heights, normals, turbines)
+        for (i in buildings.indices) if (destroyedIds.contains(objId(cx, cz, 0, i))) buildings[i].destroyed = true
+        for (i in houses.indices) if (destroyedIds.contains(objId(cx, cz, 1, i))) houses[i].destroyed = true
+        for (i in trees.indices) if (destroyedIds.contains(objId(cx, cz, 2, i))) trees[i].burnt = true
         return ChunkContent(cx, cz, heights, normals, colors, buildings, trees, houses, clouds, turbines)
     }
 
@@ -798,8 +816,15 @@ class World(val map: MapType) {
         // Nad nejvyššími možnými překážkami nemá smysl hledat.
         if (y - r > groundHeight(x, z) + 400f) return null
         if (abs(x) < 400f && abs(z) < 1300f) {
-            for (bld in airportBoxes + parkedBoxes) {
-                if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.maxY &&
+            for (bld in airportBoxes) {
+                if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.top &&
+                    z + r > bld.minZ && z - r < bld.maxZ
+                ) return ObstacleKind.BUILDING
+            }
+            for (i in parkedBoxes.indices) {
+                if (parkedDestroyed[i]) continue
+                val bld = parkedBoxes[i]
+                if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.top &&
                     z + r > bld.minZ && z - r < bld.maxZ
                 ) return ObstacleKind.BUILDING
             }
@@ -811,13 +836,13 @@ class World(val map: MapType) {
         for (cz in cza..czb) for (cx in cxa..cxb) {
             val c = content(cx, cz)
             for (bld in c.buildings) {
-                if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.maxY &&
+                if (x + r > bld.minX && x - r < bld.maxX && y + r > bld.minY && y - r < bld.top &&
                     z + r > bld.minZ && z - r < bld.maxZ
                 ) return ObstacleKind.BUILDING
             }
             for (h in c.houses) {
                 if (abs(x - h.x) < h.halfW + r && abs(z - h.z) < h.halfD + r &&
-                    y - r < h.y + h.wallH + h.roofH * 0.6f && y + r > h.y - 1f
+                    y - r < h.top && y + r > h.y - 1f
                 ) return ObstacleKind.BUILDING
             }
             for (tb in c.turbines) {
@@ -840,6 +865,85 @@ class World(val map: MapType) {
             }
         }
         return null
+    }
+
+    // ------------------------------------------------------------------ ničení
+
+    private val destroyedIds: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
+    /** Zničená odstavená letadla (stejné pořadí jako [parkedAircraft]). */
+    val parkedDestroyed = BooleanArray(4)
+
+    private fun objId(cx: Int, cz: Int, kind: Int, idx: Int): Long =
+        ((cx.toLong() and 0xFFFFFL) shl 44) or ((cz.toLong() and 0xFFFFFL) shl 24) or
+            (kind.toLong() shl 20) or (idx.toLong() and 0xFFFFFL)
+
+    private fun distToBox(x: Float, y: Float, z: Float, b: Box): Float {
+        val dx = max(max(b.minX - x, 0f), x - b.maxX)
+        val dy = max(max(b.minY - y, 0f), y - b.top)
+        val dz = max(max(b.minZ - z, 0f), z - b.maxZ)
+        return sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    /**
+     * Výbuch v bodě (x,y,z): budovy a domky v dosahu se zřítí, stromy ohoří,
+     * odstavená letadla shoří. Zničení si svět pamatuje i po odletu.
+     */
+    fun damage(x: Float, y: Float, z: Float, radius: Float): DamageReport {
+        val chunks = ArrayList<Long>()
+        val fires = ArrayList<FloatArray>()
+        val cxa = chunkOf(x - radius - BLOCK - 10f)
+        val cxb = chunkOf(x + radius + 25f)
+        val cza = chunkOf(z - radius - BLOCK - 10f)
+        val czb = chunkOf(z + radius + 25f)
+        for (cz in cza..czb) for (cx in cxa..cxb) {
+            val c = content(cx, cz)
+            var changed = false
+            c.buildings.forEachIndexed { i, b ->
+                if (!b.destroyed && distToBox(x, y, z, b) < radius) {
+                    b.destroyed = true
+                    destroyedIds.add(objId(cx, cz, 0, i))
+                    fires.add(floatArrayOf((b.minX + b.maxX) / 2f, b.top, (b.minZ + b.maxZ) / 2f, (b.maxX - b.minX) * 0.25f))
+                    changed = true
+                }
+            }
+            c.houses.forEachIndexed { i, h ->
+                val dx = max(abs(x - h.x) - h.halfW, 0f)
+                val dz = max(abs(z - h.z) - h.halfD, 0f)
+                val dy = max(max(h.y - y, 0f), y - h.top)
+                if (!h.destroyed && sqrt(dx * dx + dy * dy + dz * dz) < radius) {
+                    h.destroyed = true
+                    destroyedIds.add(objId(cx, cz, 1, i))
+                    fires.add(floatArrayOf(h.x, h.top, h.z, 3f))
+                    changed = true
+                }
+            }
+            val treeR = radius * 1.4f
+            c.trees.forEachIndexed { i, t ->
+                if (t.burnt || t.kind == PropKind.ROCK) return@forEachIndexed
+                val dx = t.x - x
+                val dz = t.z - z
+                val dy = max(t.y - y, y - (t.y + t.height)).coerceAtLeast(0f)
+                if (dx * dx + dz * dz + dy * dy < treeR * treeR) {
+                    t.burnt = true
+                    destroyedIds.add(objId(cx, cz, 2, i))
+                    changed = true
+                }
+            }
+            if (changed) chunks.add(key(cx, cz))
+        }
+        var anything = chunks.isNotEmpty()
+        parkedAircraft.forEachIndexed { i, p ->
+            val dx = p.x - x
+            val dz = p.z - z
+            val dy = airportHeight - y
+            if (!parkedDestroyed[i] && dx * dx + dz * dz + dy * dy < (radius + 15f) * (radius + 15f)) {
+                parkedDestroyed[i] = true
+                fires.add(floatArrayOf(p.x, airportHeight, p.z, 6f))
+                anything = true
+            }
+        }
+        return DamageReport(chunks, fires, anything)
     }
 
     /** Nejvyšší bod terénu i staveb pod (x,z) – pro kameru a stín. */

@@ -8,6 +8,7 @@ object Shaders {
     const val MODE_WATER = 3
     const val MODE_SHADOW = 4
     const val MODE_EFFECT = 5
+    const val MODE_DECAL = 6
 
     val WORLD_VS = """
         #version 300 es
@@ -186,6 +187,11 @@ object Shaders {
             }
             if (uMode == 5) {
                 fragColor = vec4(applyFog(vColor.rgb * uTint.rgb, dist), uTint.a);
+                return;
+            }
+            if (uMode == 6) {
+                // spálená zem – tmavá skvrna s měkkým okrajem
+                fragColor = vec4(applyFog(vColor.rgb * (1.0 - 0.6 * uNight), dist), vColor.a);
                 return;
             }
             if (uMode == 2 && vColor.a < 0.9) {

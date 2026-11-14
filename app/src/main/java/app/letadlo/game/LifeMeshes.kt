@@ -101,6 +101,92 @@ object LifeMeshes {
         return mb.build()
     }
 
+    /** Raketa: bílé tělo, červená špička, stabilizátory a svítící plamen vzadu (příď v -Z). */
+    fun rocket(): MeshData {
+        val mb = MeshBuilder(160)
+        val st = arrayOf(
+            floatArrayOf(-1.3f, 0.02f, 0.02f, 0f),
+            floatArrayOf(-0.9f, 0.13f, 0.13f, 0f),
+            floatArrayOf(1.1f, 0.13f, 0.13f, 0f),
+        )
+        mb.loftZ(st, 8) { seg, _ -> if (seg <= 0) floatArrayOf(0.85f, 0.15f, 0.12f) else floatArrayOf(0.92f, 0.92f, 0.9f) }
+        mb.box(-0.38f, -0.02f, 0.7f, 0.38f, 0.02f, 1.1f, 0.3f, 0.3f, 0.32f)
+        mb.box(-0.02f, -0.38f, 0.7f, 0.02f, 0.38f, 1.1f, 0.3f, 0.3f, 0.32f)
+        val flame = arrayOf(
+            floatArrayOf(1.12f, 0.16f, 0.16f, 0f),
+            floatArrayOf(1.9f, 0.1f, 0.1f, 0f),
+            floatArrayOf(2.6f, 0.02f, 0.02f, 0f),
+        )
+        mb.loftZ(flame, 6, capBack = false) { _, _ -> floatArrayOf(1f, 0.7f, 0.25f, 0.7f) }
+        return mb.build()
+    }
+
+    /** Letecká puma: tmavé tělo, zakulacená špička a křížové stabilizátory (příď v -Z). */
+    fun bomb(): MeshData {
+        val mb = MeshBuilder(160)
+        val st = arrayOf(
+            floatArrayOf(-1.15f, 0.08f, 0.08f, 0f),
+            floatArrayOf(-0.9f, 0.3f, 0.3f, 0f),
+            floatArrayOf(0.3f, 0.36f, 0.36f, 0f),
+            floatArrayOf(1.0f, 0.12f, 0.12f, 0f),
+        )
+        mb.loftZ(st, 10) { _, _ -> floatArrayOf(0.24f, 0.27f, 0.19f) }
+        mb.box(-0.55f, -0.03f, 0.75f, 0.55f, 0.03f, 1.3f, 0.2f, 0.22f, 0.16f)
+        mb.box(-0.03f, -0.55f, 0.75f, 0.03f, 0.55f, 1.3f, 0.2f, 0.22f, 0.16f)
+        mb.box(-0.37f, -0.05f, -0.3f, 0.37f, 0.05f, -0.2f, 0.75f, 0.65f, 0.15f)
+        return mb.build()
+    }
+
+    /** Obláček kouře (jednotkový poloměr). */
+    fun puff(dark: Boolean): MeshData {
+        val mb = MeshBuilder(64)
+        val c = if (dark) 0.2f else 0.78f
+        mb.blob(0f, 0f, 0f, 1f, 1f, 6, c, c, c * 1.02f)
+        return mb.build()
+    }
+
+    /** Plamen hořících trosek (svítí). */
+    fun flame(): MeshData {
+        val mb = MeshBuilder(64)
+        for (k in 0 until 6) {
+            val a0 = (k * PI / 3).toFloat()
+            val a1 = ((k + 1) * PI / 3).toFloat()
+            mb.triangle(
+                kotlin.math.cos(a1), 0f, kotlin.math.sin(a1), kotlin.math.cos(a0), 0f, kotlin.math.sin(a0), 0f, 2.4f, 0f,
+                1f, 0.55f, 0.12f, 0.7f,
+            )
+            mb.triangle(
+                kotlin.math.cos(a1) * 0.5f, 0f, kotlin.math.sin(a1) * 0.5f, kotlin.math.cos(a0) * 0.5f, 0f, kotlin.math.sin(a0) * 0.5f,
+                0f, 1.6f, 0f, 1f, 0.9f, 0.4f, 0.7f,
+            )
+        }
+        return mb.build()
+    }
+
+    /** Zaměřovač v rovině XY: kruh, tečka uprostřed, čtyři čárky a „křidélka". Bílý – barví se v shaderu. */
+    fun reticle(): MeshData {
+        val mb = MeshBuilder(256)
+        val seg = 40
+        for (k in 0 until seg) {
+            val a0 = (2 * PI * k / seg).toFloat()
+            val a1 = (2 * PI * (k + 1) / seg).toFloat()
+            val c0 = kotlin.math.cos(a0); val s0 = kotlin.math.sin(a0)
+            val c1 = kotlin.math.cos(a1); val s1 = kotlin.math.sin(a1)
+            mb.quad(c0 * 0.94f, s0 * 0.94f, 0f, c0, s0, 0f, c1, s1, 0f, c1 * 0.94f, s1 * 0.94f, 0f, 1f, 1f, 1f)
+        }
+        fun bar(x0: Float, y0: Float, x1: Float, y1: Float) = mb.quad(x0, y0, 0f, x1, y0, 0f, x1, y1, 0f, x0, y1, 0f, 1f, 1f, 1f)
+        bar(-0.05f, -0.05f, 0.05f, 0.05f)
+        bar(-0.03f, 1.12f, 0.03f, 1.5f)
+        bar(-0.03f, -1.5f, 0.03f, -1.12f)
+        bar(1.12f, -0.03f, 1.5f, 0.03f)
+        bar(-1.5f, -0.03f, -1.12f, 0.03f)
+        bar(-2.4f, -0.03f, -1.8f, 0.03f)
+        bar(1.8f, -0.03f, 2.4f, 0.03f)
+        bar(-1.83f, -0.3f, -1.77f, 0.03f)
+        bar(1.77f, -0.3f, 1.83f, 0.03f)
+        return mb.build()
+    }
+
     /** Tři lopatky elektrárny v rovině XY (osa otáčení Z) a náboj. */
     fun turbineBlades(radius: Float): MeshData {
         val mb = MeshBuilder(128)
