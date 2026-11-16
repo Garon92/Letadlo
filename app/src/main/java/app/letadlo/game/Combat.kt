@@ -18,7 +18,13 @@ class Bomb(var x: Float, var y: Float, var z: Float, var vx: Float, var vy: Floa
     var trail = 0f
 }
 
-enum class Weapon { NONE, ROCKETS, BOMBS }
+enum class Weapon { NONE, ROCKETS, BOMBS, CANNON }
+
+/** Dělová koule vzducholodi – letí po balistickém oblouku. */
+class Shell(var x: Float, var y: Float, var z: Float, var vx: Float, var vy: Float, var vz: Float) {
+    var age = 0f
+    var trail = 0f
+}
 
 /** Ohnivá koule s kouřem. */
 class Blast(val x: Float, val y: Float, val z: Float, val size: Float) {
@@ -55,17 +61,24 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
         const val BOMB_INTERVAL = 0.55f
         const val BOMB_BLAST = 140f
         const val BOMB_LIFE = 40f
+        const val CANNON_INTERVAL = 0.45f
+        const val CANNON_SPEED = 230f
+        const val CANNON_LIFT = 10f
+        const val CANNON_BLAST = 48f
+        const val SHELL_LIFE = 14f
         private const val G = 9.81f
         private const val BOMB_DRAG = 0.02f
 
         fun weaponFor(type: AircraftType): Weapon = when (type) {
             AircraftType.FIGHTER -> Weapon.ROCKETS
             AircraftType.BOMBER -> Weapon.BOMBS
+            AircraftType.AIRSHIP -> Weapon.CANNON
             else -> Weapon.NONE
         }
     }
 
     val bombs = ArrayList<Bomb>()
+    val shells = ArrayList<Shell>()
 
     val rockets = ArrayList<Rocket>()
     val blasts = ArrayList<Blast>()
@@ -94,6 +107,7 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
     fun reset() {
         rockets.clear()
         bombs.clear()
+        shells.clear()
         blasts.clear()
         puffs.clear()
         trigger = false
@@ -103,16 +117,25 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
     fun update(dt: Float, f: FlightModel, weapon: Weapon) {
         cooldown -= dt
         if (weapon != Weapon.NONE && trigger && f.phase != FlightPhase.CRASHED && cooldown <= 0f) {
-            if (weapon == Weapon.ROCKETS) {
-                fire(f)
-                cooldown = FIRE_INTERVAL
-            } else {
-                dropBomb(f)
-                cooldown = BOMB_INTERVAL
+            when (weapon) {
+                Weapon.ROCKETS -> {
+                    fire(f)
+                    cooldown = FIRE_INTERVAL
+                }
+                Weapon.BOMBS -> {
+                    dropBomb(f)
+                    cooldown = BOMB_INTERVAL
+                }
+                Weapon.CANNON -> {
+                    fireCannon(f)
+                    cooldown = CANNON_INTERVAL
+                }
+                Weapon.NONE -> Unit
             }
         }
         updateRockets(dt)
         updateBombs(dt)
+        updateShells(dt)
 
         val bi = blasts.iterator()
         while (bi.hasNext()) {
@@ -147,6 +170,79 @@ class Combat(private val world: World, private val life: Life, seed: Long = 11L)
     }
 
     /** Raketa vybuchne hned (zásah vzdušného cíle). */
+    /** Dělová koule vybuchne hned (zásah piráta). */
+    fun detonateShell(s: Shell) {
+        if (shells.remove(s)) explosion(s.x, s.y, s.z, CANNON_BLAST)
+    }
+
+    private var cannonSide = 1f
+
+    /** Výstřel z mosazných děl na přídi gondoly – střídavě levé a pravé. */
+    fun fireCannon(f: FlightModel) {
+        velocity(f, tmpV)
+        val fx = sin(f.heading)
+        val fz = -cos(f.heading)
+        cannonSide = -cannonSide
+        val mx = f.x + fx * 15f + fz * -2.4f * cannonSide
+        val mz = f.z + fz * 15f + fx * 2.4f * cannonSide
+        shells.add(
+            Shell(
+                mx, f.y - 10.5f, mz,
+                tmpV[0] + fx * CANNON_SPEED, tmpV[1] + CANNON_LIFT, tmpV[2] + fz * CANNON_SPEED,
+            )
+        )
+        launches++
+    }
+
+    /** Kde bude dělová koule za [t] sekund (pro zaměřovač). */
+    fun predictCannon(f: FlightModel, t: Float, out: FloatArray) {
+        velocity(f, tmpV)
+        val fx = sin(f.heading)
+        val fz = -cos(f.heading)
+        out[0] = f.x + fx * 15f + (tmpV[0] + fx * CANNON_SPEED) * t
+        out[1] = f.y - 10.5f + (tmpV[1] + CANNON_LIFT) * t - 0.5f * 9.81f * t * t
+        out[2] = f.z + fz * 15f + (tmpV[2] + fz * CANNON_SPEED) * t
+    }
+
+    private fun updateShells(dt: Float) {
+        val it = shells.iterator()
+        while (it.hasNext()) {
+            val s = it.next()
+            s.age += dt
+            val v = sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz)
+            val steps = max(1, (v * dt / 6f).toInt())
+            val sdt = dt / steps
+            var hit = false
+            for (k in 0 until steps) {
+                s.vy -= 9.81f * sdt
+                s.x += s.vx * sdt
+                s.y += s.vy * sdt
+                s.z += s.vz * sdt
+                val ground = max(world.groundHeight(s.x, s.z), World.SEA_LEVEL)
+                if (s.y <= ground) {
+                    s.y = ground
+                    hit = true
+                    break
+                }
+                if (world.hitObstacle(s.x, s.y, s.z, 0.8f) != null) {
+                    hit = true
+                    break
+                }
+            }
+            s.trail += dt
+            while (s.trail > 0.05f) {
+                s.trail -= 0.05f
+                puffs.add(Puff(s.x, s.y, s.z, 1f, false, 1.3f, 0.4f))
+            }
+            if (hit) {
+                explosion(s.x, s.y, s.z, CANNON_BLAST)
+                it.remove()
+            } else if (s.age > SHELL_LIFE) {
+                it.remove()
+            }
+        }
+    }
+
     fun detonate(r: Rocket) {
         if (rockets.remove(r)) explosion(r.x, r.y, r.z, ROCKET_BLAST)
     }

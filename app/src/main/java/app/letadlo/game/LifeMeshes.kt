@@ -207,6 +207,55 @@ object LifeMeshes {
         return mb.build()
     }
 
+    /** Zlaté ozubené kolo v rovině XY (svítí), poloměr ~6 m. */
+    fun gear(): MeshData {
+        val mb = MeshBuilder(512)
+        val teeth = 12
+        val r0 = 4.6f
+        val r1 = 6f
+        val t = 0.7f
+        val gold = floatArrayOf(1f, 0.78f, 0.25f)
+        val seg = teeth * 2
+        for (k in 0 until seg) {
+            val a0 = (2 * PI * k / seg).toFloat()
+            val a1 = (2 * PI * (k + 1) / seg).toFloat()
+            val c0 = kotlin.math.cos(a0); val s0 = kotlin.math.sin(a0)
+            val c1 = kotlin.math.cos(a1); val s1 = kotlin.math.sin(a1)
+            // věnec kola s otvorem uprostřed
+            for (z in floatArrayOf(-t, t)) {
+                mb.quad(c0 * 1.6f, s0 * 1.6f, z, c0 * r0, s0 * r0, z, c1 * r0, s1 * r0, z, c1 * 1.6f, s1 * 1.6f, z, gold[0], gold[1], gold[2], 0.75f)
+            }
+            mb.quad(c0 * r0, s0 * r0, -t, c0 * r0, s0 * r0, t, c1 * r0, s1 * r0, t, c1 * r0, s1 * r0, -t, gold[0] * 0.8f, gold[1] * 0.8f, gold[2] * 0.8f, 0.75f)
+            mb.quad(c0 * 1.6f, s0 * 1.6f, -t, c1 * 1.6f, s1 * 1.6f, -t, c1 * 1.6f, s1 * 1.6f, t, c0 * 1.6f, s0 * 1.6f, t, 0.6f, 0.45f, 0.15f, 0.75f)
+            if (k % 2 == 0) {
+                // zub
+                val m0 = a0 + (a1 - a0) * 0.12f
+                val m1 = a1 - (a1 - a0) * 0.12f
+                val q0c = kotlin.math.cos(m0); val q0s = kotlin.math.sin(m0)
+                val q1c = kotlin.math.cos(m1); val q1s = kotlin.math.sin(m1)
+                mb.hexa8(
+                    q0c * r0, q0s * r0, -t, q0c * r1, q0s * r1, -t, q0c * r1, q0s * r1, t, q0c * r0, q0s * r0, t,
+                    q1c * r0, q1s * r0, -t, q1c * r1, q1s * r1, -t, q1c * r1, q1s * r1, t, q1c * r0, q1s * r0, t,
+                    gold[0], gold[1], gold[2], 0.75f,
+                )
+            }
+        }
+        // paprsky
+        for (k in 0 until 4) {
+            val a = (PI / 4 + k * PI / 2).toFloat()
+            mb.bladeZ(a, 0.8f, r0, 0.9f, 1.2f, gold[0] * 0.9f, gold[1] * 0.9f, gold[2] * 0.9f)
+        }
+        return mb.build()
+    }
+
+    /** Železná dělová koule. */
+    fun shell(): MeshData {
+        val mb = MeshBuilder(64)
+        mb.puff(0f, -0.35f, 0f, 0.55f, 0.55f, 0.18f)
+        mb.blob(0f, -0.35f, 0f, 0.5f, 0.42f, 6, 0.16f, 0.16f, 0.17f)
+        return mb.build()
+    }
+
     /** Kosočtverečná značka cíle (billboard). */
     fun diamond(): MeshData {
         val mb = MeshBuilder(32)

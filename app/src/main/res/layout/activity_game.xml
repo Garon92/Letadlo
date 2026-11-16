@@ -200,6 +200,39 @@
             android:textSize="26sp" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/steamBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|bottom"
+        android:layout_marginStart="114dp"
+        android:layout_marginBottom="124dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/btnSteam"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:background="@drawable/steam_button"
+            android:clickable="true"
+            android:contentDescription="@string/steam"
+            android:focusable="true"
+            android:padding="12dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_steam" />
+
+        <ProgressBar
+            android:id="@+id/steamBar"
+            style="@android:style/Widget.Material.ProgressBar.Horizontal"
+            android:layout_width="66dp"
+            android:layout_height="6dp"
+            android:layout_marginTop="4dp"
+            android:max="100"
+            android:progressTint="#FFBFE3FF" />
+    </LinearLayout>
+
     <ImageView
         android:id="@+id/btnFire"
         android:layout_width="78dp"

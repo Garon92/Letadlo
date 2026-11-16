@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Parní píšťala s obláčky páry -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.5,6.5m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.5,4.6m-3.4,0a3.4,3.4 0,1 1,6.8 0a3.4,3.4 0,1 1,-6.8 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.6,6.8m-2.8,0a2.8,2.8 0,1 1,5.6 0a2.8,2.8 0,1 1,-5.6 0" />
+    <path
+        android:fillColor="#FFF2C766"
+        android:pathData="M9.6,10.5L14.4,10.5L14.4,18.5L9.6,18.5Z" />
+    <path
+        android:fillColor="#FFB98A2E"
+        android:pathData="M8.6,12.6L15.4,12.6L15.4,13.6L8.6,13.6Z" />
+    <path
+        android:fillColor="#FFB98A2E"
+        android:pathData="M8.6,16L15.4,16L15.4,17L8.6,17Z" />
+    <path
+        android:fillColor="#FFDDE3EA"
+        android:pathData="M10.8,18.5L13.2,18.5L13.2,22.5L10.8,22.5Z" />
+</vector>

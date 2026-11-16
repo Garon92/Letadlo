@@ -39,6 +39,10 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         const val HELI_SINK = 30f
         /** Kolem neutrální polohy vrtulník drží výšku. */
         const val HELI_HOLD = 0.18f
+        const val AIRSHIP_CLIMB = 14f
+        const val AIRSHIP_SINK = 16f
+        /** Rychlost vzducholodi s párou naplno. */
+        const val AIRSHIP_BOOST = 60f
 
         fun rad(deg: Float): Float = (deg * PI / 180.0).toFloat()
     }
@@ -81,13 +85,26 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     /** Brzdění na zemi (dopravní letadlo po dokončeném letu). */
     var brake = false
 
+    /** Pára vzducholodi 0..1 – tlačítkem se z ní zrychluje, ozubená kola ji doplňují. */
+    var steam = 1f; private set
+
+    /** Hráč drží tlačítko páry. */
+    @Volatile var boostInput = false
+
+    val boosting: Boolean
+        get() = type.airship && boostInput && steam > 0.02f && phase == FlightPhase.AIRBORNE
+
+    fun addSteam(v: Float) {
+        steam = (steam + v).coerceIn(0f, 1f)
+    }
+
     val gearHeight: Float get() = type.gearHeight
 
     val altitudeAgl: Float get() = y - max(world.groundHeight(x, z), World.SEA_LEVEL) - type.gearHeight
 
     /** Je možné vzlétnout (letadlo má rychlost, vrtulník roztočený rotor)? */
     val readyForTakeoff: Boolean
-        get() = if (type.helicopter) rotorSpin >= 1f else speed >= type.rotateSpeed
+        get() = if (type.vertical) rotorSpin >= 1f else speed >= type.rotateSpeed
 
     init {
         reset()
@@ -111,6 +128,8 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         hasTakenOff = false
         rotorSpin = 0f
         brake = false
+        steam = 1f
+        boostInput = false
     }
 
     /** Umístí letadlo rovnou do vzduchu (pro testy). */
@@ -133,12 +152,16 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         val r = rollIn.coerceIn(-1f, 1f)
         val p = pitchIn.coerceIn(-1f, 1f)
         totalTime += dt
-        propeller += if (type.helicopter) dt * 6.5f * rotorSpin else dt * (20f + speed * 0.6f)
+        propeller += when {
+            type.helicopter -> dt * 6.5f * rotorSpin
+            type.airship -> dt * rotorSpin * (1.5f + speed * 0.06f)
+            else -> dt * (20f + speed * 0.6f)
+        }
         if (propeller > 1000f) propeller -= 1000f
-        if (type.helicopter) {
+        if (type.vertical) {
             when (phase) {
                 FlightPhase.ROLLING -> updateHeliGround(dt, p)
-                FlightPhase.AIRBORNE -> updateHeliAir(dt, r, p)
+                FlightPhase.AIRBORNE -> if (type.airship) updateAirshipAir(dt, r, p) else updateHeliAir(dt, r, p)
                 FlightPhase.CRASHED -> Unit
             }
         } else {
@@ -269,6 +292,49 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         if (phase == FlightPhase.AIRBORNE) maxAltitudeAgl = max(maxAltitudeAgl, altitudeAgl)
     }
 
+    // ------------------------------------------------------------------ vzducholoď
+
+    private fun updateAirshipAir(dt: Float, r: Float, p: Float) {
+        airTime += dt
+        rotorSpin = 1f
+        // kotel páru pomalu doplňuje, zrychlení ji spotřebovává
+        steam = if (boosting) max(0f, steam - dt * 0.16f) else min(1f, steam + dt * 0.025f)
+        bank = approach(bank, r * maxBank, dt, type.bankRate)
+        val pp = if (abs(p) < HELI_HOLD) 0f else (p - sign(p) * HELI_HOLD) / (1f - HELI_HOLD)
+        var targetVy = if (pp >= 0f) pp * AIRSHIP_CLIMB else pp * AIRSHIP_SINK
+        if (y > type.ceiling) targetVy = min(targetVy, -1f)
+        verticalSpeed = approach(verticalSpeed, targetVy, dt, 1.1f)
+
+        val cruise = if (boosting) AIRSHIP_BOOST else type.maxSpeed
+        val targetSpeed = cruise * World.smoothstep(3f, 20f, altitudeAgl)
+        speed = approach(speed, targetSpeed, dt, if (boosting) 0.6f else 0.3f)
+
+        heading += maxTurn * (bank / maxBank) * dt
+        wrapHeading()
+        // líné houpání velkého balonu
+        pitch = approach(pitch, verticalSpeed * 0.012f + sin(totalTime * 0.7f) * 0.012f, dt, 1.5f)
+
+        val dx = sin(heading) * speed * dt
+        val dz = -cos(heading) * speed * dt
+        x += dx
+        z += dz
+        y += verticalSpeed * dt
+        distance += sqrt(dx * dx + dz * dz)
+
+        checkCollisions()
+        if (phase == FlightPhase.AIRBORNE) maxAltitudeAgl = max(maxAltitudeAgl, altitudeAgl)
+    }
+
+    /** Vzducholoď je dlouhá – kontroluje se příď, střed, záď balonu a gondola. */
+    private fun airshipHit(): ObstacleKind? {
+        val fx = sin(heading)
+        val fz = -cos(heading)
+        return world.hitObstacle(x, y, z, 8.5f)
+            ?: world.hitObstacle(x + fx * 19f, y, z + fz * 19f, 6.5f)
+            ?: world.hitObstacle(x - fx * 19f, y, z - fz * 19f, 6.5f)
+            ?: world.hitObstacle(x, y - 10.5f, z, 3.5f)
+    }
+
     // ------------------------------------------------------------------ kolize
 
     private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
@@ -276,13 +342,13 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     /** Kam může dosednout: terén, u vrtulníku i rovné střechy. */
     private fun landingHeight(): Float {
         val gh = max(world.groundHeight(x, z), World.SEA_LEVEL)
-        if (!type.helicopter) return gh
+        if (!type.vertical) return gh
         val roof = world.roofTop(x, z) ?: return gh
         return max(gh, roof)
     }
 
     private fun checkCollisions() {
-        val heli = type.helicopter
+        val heli = type.vertical
         val roof = if (heli) world.roofTop(x, z) else null
         val gh = if (roof != null) max(roof, world.groundHeight(x, z)) else world.groundHeight(x, z)
         if (roof == null && gh < World.SEA_LEVEL && y - type.gearHeight * 0.5f <= World.SEA_LEVEL) {
@@ -307,7 +373,11 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
             return
         }
         // vrtulník: kolizní koule nad ližinami, aby šlo sednout na střechu i z ní vzlétnout
-        val hit = if (heli) world.hitObstacle(x, y + 1.5f, z, 3f) else world.hitObstacle(x, y, z, type.radius)
+        val hit = when {
+            type.airship -> airshipHit()
+            heli -> world.hitObstacle(x, y + 1.5f, z, 3f)
+            else -> world.hitObstacle(x, y, z, type.radius)
+        }
         when (hit) {
             ObstacleKind.BUILDING -> crash(CrashReason.BUILDING)
             ObstacleKind.TREE -> crash(CrashReason.TREE)

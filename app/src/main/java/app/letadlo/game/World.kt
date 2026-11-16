@@ -803,6 +803,7 @@ class World(val map: MapType) {
         val (len, span, h) = when (p.type) {
             AircraftType.AIRLINER -> Triple(20f, 17f, 11f)
             AircraftType.BOMBER -> Triple(12f, 16f, 6f)
+            AircraftType.AIRSHIP -> Triple(30f, 9f, 20f)
             AircraftType.FIGHTER -> Triple(9f, 5f, 5f)
             AircraftType.HELICOPTER -> Triple(6f, 5.5f, 4f)
             AircraftType.SPORT -> Triple(4f, 5f, 3f)

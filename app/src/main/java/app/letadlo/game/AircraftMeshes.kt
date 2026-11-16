@@ -35,7 +35,11 @@ object AircraftMeshes {
         AircraftType.AIRLINER -> airliner()
         AircraftType.HELICOPTER -> helicopter()
         AircraftType.BOMBER -> bomber()
+        AircraftType.AIRSHIP -> airship(false)
     }
+
+    /** Pirátská vzducholoď (cíl) – stejný tvar, temně rudý balon, bez svítících oken. */
+    fun pirateAirship(): MeshData = airship(true)
 
     fun rotors(type: AircraftType): List<RotorSpec> = when (type) {
         AircraftType.SPORT -> listOf(RotorSpec(propeller(1.05f, 2, 0.18f, DARK), 0f, 0.05f, -3.72f, 'z', 1f))
@@ -44,6 +48,15 @@ object AircraftMeshes {
             RotorSpec(propeller(5.6f, 4, 0.36f, floatArrayOf(0.15f, 0.15f, 0.16f)), 0f, 2.0f, 0.1f, 'y', 1f),
             RotorSpec(propeller(0.95f, 2, 0.16f, floatArrayOf(0.15f, 0.15f, 0.16f)), 0.28f, 1.15f, 8.75f, 'x', 4.5f),
         )
+        AircraftType.AIRSHIP -> {
+            val wood = floatArrayOf(0.5f, 0.32f, 0.17f)
+            val side = propeller(2.3f, 4, 0.55f, wood)
+            listOf(
+                RotorSpec(side, -6.8f, -9f, 6.6f, 'z', 0.7f),
+                RotorSpec(side, 6.8f, -9f, 6.6f, 'z', 0.7f),
+                RotorSpec(propeller(3.2f, 4, 0.7f, wood), 0f, 0f, 30.2f, 'z', 0.5f),
+            )
+        }
         AircraftType.BOMBER -> {
             val p = propeller(1.75f, 3, 0.3f, DARK)
             listOf(
@@ -62,6 +75,7 @@ object AircraftMeshes {
         AircraftType.AIRLINER -> floatArrayOf(-0.55f, 0.95f, -16.6f)
         AircraftType.HELICOPTER -> floatArrayOf(-0.45f, 0.8f, -1.6f)
         AircraftType.BOMBER -> floatArrayOf(-0.5f, 1.55f, -6.7f)
+        AircraftType.AIRSHIP -> floatArrayOf(0f, -8.8f, -7.6f)
     }
 
     /**
@@ -78,14 +92,16 @@ object AircraftMeshes {
             AircraftType.AIRLINER -> Pair(1.15f, 0.95f)
             AircraftType.HELICOPTER -> Pair(0.9f, 0.85f)
             AircraftType.BOMBER -> Pair(1.0f, 0.9f)
+            AircraftType.AIRSHIP -> Pair(1.4f, 1.0f)
         }
+        val airship = type == AircraftType.AIRSHIP
         val pz = ez - dist
         val top = ey - dist * if (type == AircraftType.HELICOPTER) 0.62f else 0.47f
         // deska je nakloněná k pilotovi, aby budíky nebyly vidět z ostrého úhlu
         mb.hexa8(
             -w, top - 0.42f, pz - 0.2f, w, top - 0.42f, pz - 0.2f, w, top - 0.42f, pz + 0.05f, -w, top - 0.42f, pz + 0.05f,
             -w, top, pz - 0.2f, w, top, pz - 0.2f, w, top, pz, -w, top, pz,
-            0.15f, 0.15f, 0.16f,
+            if (airship) 0.36f else 0.15f, if (airship) 0.22f else 0.15f, if (airship) 0.12f else 0.16f,
         )
         // tenká stříška nad budíky
         mb.box(-w - 0.02f, top, pz - 0.24f, w + 0.02f, top + 0.025f, pz + 0.03f, 0.06f, 0.06f, 0.07f)
@@ -96,8 +112,14 @@ object AircraftMeshes {
             val dy = top - 0.1f - row * 0.16f
             val green = (c + row) % 4 == 2
             val zf = pz + 0.012f + (top - dy) * (0.05f / 0.42f)
-            disc(mb, dx, dy, zf, 0.055f,
-                if (green) 0.25f else 0.92f, if (green) 0.85f else 0.93f, if (green) 0.45f else 0.88f, 0.75f)
+            if (airship) {
+                // mosazné budíky parního stroje
+                disc(mb, dx, dy, zf - 0.004f, 0.075f, 0.85f, 0.62f, 0.22f, 1f)
+                disc(mb, dx, dy, zf, 0.058f, 0.96f, 0.92f, 0.8f, 0.75f)
+            } else {
+                disc(mb, dx, dy, zf, 0.055f,
+                    if (green) 0.25f else 0.92f, if (green) 0.85f else 0.93f, if (green) 0.45f else 0.88f, 0.75f)
+            }
         }
         return mb.build()
     }
@@ -137,6 +159,10 @@ object AircraftMeshes {
             }
             AircraftType.BOMBER -> {
                 rect(-16f, -3.5f, 16f, 1.5f); rect(-1.3f, -11.5f, 1.3f, 12f); rect(-6f, 9.5f, 6f, 12f)
+            }
+            AircraftType.AIRSHIP -> {
+                rect(-5f, -24f, 5f, 26f); rect(-7.5f, -16f, 7.5f, 16f); rect(-8.3f, -6f, 8.3f, 8f)
+                rect(-13f, 19f, 13f, 27f)
             }
         }
         return mb.build()
@@ -439,6 +465,99 @@ object AircraftMeshes {
         box(mb, -0.6f, 1.25f, -0.6f, 0.6f, 1.6f, 1.4f, floatArrayOf(0.7f, 0.12f, 0.1f))
         box(mb, -0.12f, 1.6f, -0.02f, 0.12f, 1.95f, 0.22f, DARK)
         return mb.build()
+    }
+
+    // ------------------------------------------------------------------ vzducholoď
+
+    private fun airship(pirate: Boolean): MeshData {
+        val mb = MeshBuilder(4096)
+        val canvasA = if (pirate) floatArrayOf(0.38f, 0.08f, 0.07f) else floatArrayOf(0.84f, 0.74f, 0.54f)
+        val canvasB = if (pirate) floatArrayOf(0.24f, 0.05f, 0.05f) else floatArrayOf(0.72f, 0.6f, 0.42f)
+        val copper = floatArrayOf(0.74f, 0.44f, 0.2f)
+        val brass = floatArrayOf(0.85f, 0.66f, 0.26f)
+        val wood = if (pirate) floatArrayOf(0.2f, 0.13f, 0.08f) else floatArrayOf(0.47f, 0.29f, 0.15f)
+        val leather = if (pirate) floatArrayOf(0.12f, 0.1f, 0.1f) else floatArrayOf(0.55f, 0.22f, 0.15f)
+
+        // balon: záplatované plátno v pruzích
+        val env = arrayOf(
+            floatArrayOf(-28f, 0.4f, 0.4f, 0f),
+            floatArrayOf(-26f, 3.6f, 3.6f, 0f),
+            floatArrayOf(-22f, 6.2f, 6.2f, 0f),
+            floatArrayOf(-15f, 7.8f, 7.8f, 0f),
+            floatArrayOf(-5f, 8.3f, 8.3f, 0f),
+            floatArrayOf(6f, 8.2f, 8.2f, 0f),
+            floatArrayOf(16f, 7f, 7f, 0f),
+            floatArrayOf(24f, 4.4f, 4.4f, 0f),
+            floatArrayOf(29.5f, 1f, 1f, 0f),
+        )
+        mb.loftZ(env, 16) { seg, ang ->
+            val panel = (((ang / (2 * PI)) * 16).toInt() + seg) % 2 == 0
+            if (seg < 0 || seg >= env.size) copper else if (panel) canvasA else canvasB
+        }
+        // měděné obruče
+        for (zb in floatArrayOf(-22f, -15f, -5f, 6f, 16f, 24f)) {
+            val r = interpRadius(env, zb) * 1.025f
+            mb.loftZ(arrayOf(floatArrayOf(zb - 0.35f, r, r, 0f), floatArrayOf(zb + 0.35f, r, r, 0f)), 16,
+                capFront = false, capBack = false) { _, _ -> copper }
+        }
+        // ocasní plochy do kříže
+        fin(mb, 0f, 0.18f, 6f, 13.5f, 17f, 28f, 23f, 28.5f, leather)
+        mb.hexa8(
+            -0.18f, -13.5f, 23f, 0.18f, -13.5f, 23f, 0.18f, -13.5f, 28.5f, -0.18f, -13.5f, 28.5f,
+            -0.12f, -6f, 17f, 0.12f, -6f, 17f, 0.12f, -6f, 28f, -0.12f, -6f, 28f,
+            leather[0], leather[1], leather[2],
+        )
+        panel(mb, 5.5f, 13.5f, 0f, 0f, 17f, 28f, 23f, 28.5f, 0.18f, 0.12f, leather)
+        panel(mb, -5.5f, -13.5f, 0f, 0f, 17f, 28f, 23f, 28.5f, 0.18f, 0.12f, leather)
+        // gondola: dřevěný trup lodi s mosazným lemem
+        mb.hexa8(
+            -1.6f, -13.1f, -9f, 1.6f, -13.1f, -9f, 1.6f, -13.1f, 9f, -1.6f, -13.1f, 9f,
+            -2.6f, -9.5f, -11.5f, 2.6f, -9.5f, -11.5f, 2.6f, -9.5f, 11f, -2.6f, -9.5f, 11f,
+            wood[0], wood[1], wood[2],
+        )
+        mb.box(-2.7f, -9.7f, -11.6f, 2.7f, -9.35f, 11.1f, brass[0], brass[1], brass[2])
+        // kajuta s okny (v noci svítí)
+        mb.box(-2.2f, -9.35f, -8.5f, 2.2f, -7.4f, 6f, wood[0] * 0.8f, wood[1] * 0.8f, wood[2] * 0.8f, 1f, brass[0], brass[1], brass[2])
+        if (!pirate) {
+            for (z in floatArrayOf(-6.5f, -3.5f, -0.5f, 2.5f)) {
+                for (sx in floatArrayOf(-2.21f, 2.21f)) {
+                    val x0 = sx
+                    mb.quad(x0, -8.9f, z, x0, -8.9f, z + 1.6f, x0, -7.9f, z + 1.6f, x0, -7.9f, z, 1f, 0.78f, 0.4f, 0.7f)
+                }
+            }
+        }
+        // přední okno můstku
+        mb.quad(-1.8f, -9.2f, -8.51f, 1.8f, -9.2f, -8.51f, 1.8f, -7.7f, -8.51f, -1.8f, -7.7f, -8.51f, 0.2f, 0.28f, 0.34f)
+        // vzpěry k balonu
+        for (zs in floatArrayOf(-7f, 0f, 7f)) for (xs in floatArrayOf(-1.7f, 1.7f)) {
+            mb.box(xs - 0.12f, -7.4f, zs - 0.12f, xs + 0.12f, -7f, zs + 0.12f, brass[0], brass[1], brass[2])
+        }
+        // ramena s gondolami vrtulí a komínky
+        for (side in -1..1 step 2) {
+            val s = side.toFloat()
+            mb.box(if (side > 0) 2.6f else -6.9f, -9.3f, 3.6f, if (side > 0) 6.9f else -2.6f, -8.8f, 4.2f, brass[0], brass[1], brass[2])
+            val nac = arrayOf(floatArrayOf(1.8f, 0.7f, 0.7f, -9f), floatArrayOf(6.4f, 0.55f, 0.55f, -9f))
+            mb.loftZ(nac, 8, cx = s * 6.8f) { _, _ -> copper }
+            mb.cylinderY(s * 5.4f, -9.4f, 3.9f, 0.55f, -6.6f, 0.45f, 8, brass[0], brass[1], brass[2])
+            mb.cylinderY(s * 5.4f, -6.6f, 3.9f, 0.62f, -6.3f, 0.62f, 8, 0.15f, 0.12f, 0.1f)
+            // mosazné dělo na přídi
+            val gun = arrayOf(floatArrayOf(-15.5f, 0.28f, 0.28f, -10.5f), floatArrayOf(-11.3f, 0.36f, 0.36f, -10.5f))
+            mb.loftZ(gun, 8, cx = s * 2.4f) { seg, _ -> if (seg == -1) DARK else brass }
+            if (!pirate) light(mb, s * 13.6f, 0f, 22f, if (side > 0) NAV_GREEN else NAV_RED)
+        }
+        // kotevní nohy
+        for (z in floatArrayOf(-6f, 6f)) mb.box(-0.15f, -13.2f, z - 0.15f, 0.15f, -12.9f, z + 0.15f, DARK[0], DARK[1], DARK[2])
+        return mb.build()
+    }
+
+    private fun interpRadius(st: Array<FloatArray>, z: Float): Float {
+        for (i in 0 until st.size - 1) {
+            if (z >= st[i][0] && z <= st[i + 1][0]) {
+                val t = (z - st[i][0]) / (st[i + 1][0] - st[i][0])
+                return st[i][1] + (st[i + 1][1] - st[i][1]) * t
+            }
+        }
+        return st.last()[1]
     }
 
     // ------------------------------------------------------------------ bombardér

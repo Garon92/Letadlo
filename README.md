@@ -23,6 +23,8 @@ Na telefonu povol instalaci z neznámých zdrojů a APK otevři. Vyžaduje Andro
    Vpravo nahoře je průhledná mapa okolí natočená ve směru letu.
 7. **Stíhačka** má vlevo tlačítko 🚀 – dokud ho držíš, neomezeně pálí rakety přesně do zeleného zaměřovače.
    **Bombardér** má tlačítko 💣 – shazuje silné bomby, zelený kruh na zemi ukazuje, kam dopadnou.
+   **Vzducholoď** má dělo (koule letí po oblouku do měděného zaměřovače) a tlačítko páry –
+   dokud ho držíš, pluje rychleji a píská parní píšťala; páru doplňují sebraná ozubená kola.
    Výbuchy rozházejí auta a lidi, zbortí budovy a domy, spálí stromy a zanechají ohořelou zem a hořící trosky.
 8. Náraz do země, hory, budovy, stromů, elektrárny nebo pád do vody let ukončí.
    Měkké dosednutí na dráhu je přistání – můžeš zase vzlétnout. Vrtulník přistane na jakékoli rovině.
@@ -47,6 +49,7 @@ A každé letadlo má vlastní úkol (zářící značky ukazují cíle přes ce
 | 💣 Bombardér | továrny, sklady paliva a radary; tlačítko pohledu má navíc **🎯 pohled dolů** |
 | 🚁 Vrtulník | záchrana zraněných ze střech mrakodrapů, horských svahů a luk → přistát u nemocnice na letišti |
 | ✈️ Dopravní | trasa přes 4 body, přistávací koridor a hodnocené přistání; pak zastaví a letí znovu |
+| ⚙️ Vzducholoď | řetězy zlatých ozubených kol (doplňují páru), pirátské vzducholodě sestřelované dělem po oblouku |
 
 Tlačítkem **↩** nahoře se vrátíš do menu. V menu je u každé mapy rekord pro vybrané letadlo.
 
@@ -59,6 +62,7 @@ Tlačítkem **↩** nahoře se vrátíš do menu. V menu je u každé mapy rekor
 | ✈️ Dopravní | ~840 km/h, dlouhý rozjezd, pomalé zatáčky |
 | 🚁 Vrtulník | ~270 km/h, svislý vzlet, přistání kdekoli, náklon k sobě = stoupání |
 | 💣 Bombardér | ~480 km/h, čtyři vrtule, neomezené bomby |
+| ⚙️ Vzducholoď | ~125 km/h (s párou ~210 km/h), steampunk: plátěný balon, dřevěná gondola, mosazná děla, svislý vzlet, přistání kdekoli |
 
 ## Mapy
 

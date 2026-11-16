@@ -17,6 +17,10 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
 
     private val jet = type == AircraftType.FIGHTER || type == AircraftType.AIRLINER
     private val heli = type == AircraftType.HELICOPTER
+    private val steamEngine = type == AircraftType.AIRSHIP
+
+    /** Vzducholoď jede na páru naplno – zapíská parní píšťala. */
+    @Volatile var boosting = false
 
     /** Rychlost letadla v m/s – určuje otáčky a sílu větru. */
     @Volatile var speed = 0f
@@ -113,6 +117,8 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         var roar = 0.0
         var hiss = 0.0
         var whistle = 0.0
+        var chuffPhase = 0.0
+        var pipe = 0.0
         var whistlePhase = 0.0
         try {
             while (alive) {
@@ -159,6 +165,17 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
                         roar = roar * 0.9 + (rnd.nextDouble() - 0.5) * 0.25
                         s = 0.25 * sin(w * 9.0) + 0.15 * sin(w * 13.7) + 0.4 * sin(w)
                         out = s * vol * 0.5 + roar * vol * 2.6 + wind * windVol * 3.0
+                    } else if (steamEngine) {
+                        // parní stroj: rytmické „čuch" + hluboký hukot kotle
+                        chuffPhase += (1.3 + v * 0.11) / rate
+                        if (chuffPhase >= 1.0) chuffPhase -= 1.0
+                        val env = kotlin.math.exp(-chuffPhase * 7.0)
+                        roar = roar * 0.86 + (rnd.nextDouble() - 0.5) * 0.3
+                        out = (roar * 3.2 * env + 0.18 * sin(w * 0.5)) * vol * 1.4 + wind * windVol * 2.0
+                        if (boosting) {
+                            pipe += 1.0 / rate
+                            out += (sin(twoPi * 740.0 * pipe) + 0.7 * sin(twoPi * 932.0 * pipe) + 0.4 * sin(twoPi * 1110.0 * pipe)) * 0.05
+                        }
                     } else if (heli) {
                         // údery listů rotoru
                         roar = roar * 0.8 + (rnd.nextDouble() - 0.5) * 0.4

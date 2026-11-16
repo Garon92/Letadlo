@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mosazné dělo na lafetě se dvěma koly -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="-20">
+        <path
+            android:fillColor="#FFF2C766"
+            android:pathData="M3,9.6L17.5,8.2C18.6,8.1 19.4,8.9 19.4,10L19.4,13C19.4,14.1 18.6,14.9 17.5,14.8L3,13.4Z" />
+        <path
+            android:fillColor="#FFB98A2E"
+            android:pathData="M19.4,8.9L21.6,8.7L21.6,14.3L19.4,14.1Z" />
+        <path
+            android:fillColor="#FFB98A2E"
+            android:pathData="M7,9.2L8.4,9.1L8.4,13.9L7,13.8Z" />
+        <path
+            android:fillColor="#FF2A2A2A"
+            android:pathData="M20.6,10.1L22.4,10.1L22.4,12.9L20.6,12.9Z" />
+    </group>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,19.5m-3.4,0a3.4,3.4 0,1 1,6.8 0a3.4,3.4 0,1 1,-6.8 0" />
+    <path
+        android:fillColor="#FF8A5A2B"
+        android:pathData="M8,19.5m-1.3,0a1.3,1.3 0,1 1,2.6 0a1.3,1.3 0,1 1,-2.6 0" />
+    <path
+        android:fillColor="#FFDDE3EA"
+        android:pathData="M5.5,14.5L13.5,14.5L12,17L7,17Z" />
+</vector>

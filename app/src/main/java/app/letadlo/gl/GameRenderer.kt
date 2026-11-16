@@ -59,6 +59,9 @@ class HudState(
     val lowFlying: Boolean,
     val popups: List<String>,
     val markers: FloatArray,
+    /** Pára vzducholodi 0..1, jinak -1. */
+    val steam: Float,
+    val boosting: Boolean,
 )
 
 class FlightResult(
@@ -121,6 +124,7 @@ class GameRenderer(
         AircraftType.AIRLINER -> 2.7f
         AircraftType.HELICOPTER -> 1.3f
         AircraftType.BOMBER -> 2.3f
+        AircraftType.AIRSHIP -> 3.4f
     }
 
     // šablony pohyblivých věcí (CPU)
@@ -145,6 +149,10 @@ class GameRenderer(
         }
     }
     private val rescueeT = LifeMeshes.person(1)
+    private val gearT = LifeMeshes.gear()
+    private val shellT = LifeMeshes.shell()
+    private val pirateT = AircraftMeshes.pirateAirship()
+    private var steamTimer = 0f
     private val helipadT = LifeMeshes.helipad()
     private lateinit var ringMesh: GpuMesh
     private lateinit var diamondMesh: GpuMesh
@@ -306,6 +314,7 @@ class GameRenderer(
         life.update(dt, camX, camZ)
         combat.update(dt, flight, weapon)
         missions.update(dt, flight, combat)
+        if (aircraft.airship && flight.phase != FlightPhase.CRASHED && flight.rotorSpin > 0.3f) puffSteam(dt)
         // širší zorné pole s rychlostí – pocit rychlosti
         val speedK = ((flight.speed - 60f) / 450f).coerceIn(0f, 1f)
         val wantFov = if (viewMode == 2) 64f else 52f + 14f * speedK
@@ -351,6 +360,8 @@ class GameRenderer(
                     lowFlying = missions.lowFlying,
                     popups = missions.popups.map { it.text }.also { missions.popups.clear() },
                     markers = missions.markers(),
+                    steam = if (aircraft.airship) flight.steam else -1f,
+                    boosting = flight.boosting,
                 )
             )
         }
@@ -407,6 +418,20 @@ class GameRenderer(
                 (b * 255f).toInt().coerceIn(0, 255)
         }
         listener.onMinimap(px, mapN, cx, cz, step)
+    }
+
+    /** Pára z mosazných komínků – při zrychlení hustší. */
+    private fun puffSteam(dt: Float) {
+        steamTimer += dt
+        val interval = if (flight.boosting) 0.04f else 0.13f
+        if (steamTimer < interval) return
+        steamTimer = 0f
+        planeModel(model2)
+        for (side in -1..1 step 2) {
+            v4b[0] = side * 5.4f; v4b[1] = -6.1f; v4b[2] = 3.9f; v4b[3] = 1f
+            Matrix.multiplyMV(v4, 0, model2, 0, v4b, 0)
+            combat.puffs.add(app.letadlo.game.Puff(v4[0], v4[1], v4[2], if (flight.boosting) 2.4f else 1.6f, false, 2.2f, 2.5f))
+        }
     }
 
     private fun summary(): String {
@@ -640,7 +665,12 @@ class GameRenderer(
                     val yaw = if (g.vx != 0f || g.vz != 0f) Rot.yawFor(g.vx, g.vz) else g.x * 0.01f
                     batch.add(targetT.getValue(g.style), g.x, g.y, g.z, yaw)
                 }
-                GoalKind.AIR_TARGET -> batch.add(targetT.getValue(TargetStyle.BALLOON), g.x, g.y - 2f, g.z, g.age * 0.2f)
+                GoalKind.AIR_TARGET -> if (g.style == TargetStyle.PIRATE) {
+                    batch.add(pirateT, g.x, g.y, g.z, Rot.yawFor(g.vx, g.vz), 0f, sin(g.age * 0.6f) * 0.03f, 0.45f)
+                } else {
+                    batch.add(targetT.getValue(TargetStyle.BALLOON), g.x, g.y - 2f, g.z, g.age * 0.2f)
+                }
+                GoalKind.GEAR -> batch.add(gearT, g.x, g.y, g.z, time * 1.6f + g.order * 0.5f)
                 GoalKind.PICKUP -> batch.add(rescueeT, g.x, g.y, g.z, time * 0.8f)
                 GoalKind.DROPOFF -> batch.add(helipadT, g.x, g.y + 0.15f, g.z, 0f)
                 else -> Unit
@@ -652,6 +682,7 @@ class GameRenderer(
             val v = sqrt(r.vx * r.vx + r.vy * r.vy + r.vz * r.vz).coerceAtLeast(1f)
             batch.add(rocketT, r.x, r.y, r.z, Rot.yawFor(r.vx, r.vz), kotlin.math.asin((r.vy / v).coerceIn(-1f, 1f)))
         }
+        for (sh in combat.shells) batch.add(shellT, sh.x, sh.y, sh.z, 0f, 0f, 0f, 1.6f)
         for (bm in combat.bombs) {
             val v = sqrt(bm.vx * bm.vx + bm.vy * bm.vy + bm.vz * bm.vz).coerceAtLeast(1f)
             batch.add(bombT, bm.x, bm.y, bm.z, Rot.yawFor(bm.vx, bm.vz), kotlin.math.asin((bm.vy / v).coerceIn(-1f, 1f)), 0f, 2.2f)
@@ -934,9 +965,12 @@ class GameRenderer(
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        val nextGear = missions.goals.filter { it.kind == GoalKind.GEAR }.minOfOrNull { it.order } ?: -1
         for (g in missions.goals) {
             if (g.dead || g.preview) continue
+            if (g.kind == GoalKind.GEAR && g.order != nextGear) continue
             val my = when (g.kind) {
+                GoalKind.GEAR -> g.y + 12f
                 GoalKind.RING -> g.y + g.radius * 1.6f
                 GoalKind.GROUND_TARGET -> g.y + g.radius * 2f + 14f
                 GoalKind.AIR_TARGET -> g.y + 22f
@@ -962,6 +996,7 @@ class GameRenderer(
                 GoalKind.PICKUP -> p.set("uTint", 0.3f, 1f, 0.4f, 0.9f)
                 GoalKind.DROPOFF -> p.set("uTint", 0.35f, 0.65f, 1f, 0.9f)
                 GoalKind.RUNWAY -> p.set("uTint", 1f, 1f, 1f, 0.9f)
+                GoalKind.GEAR -> p.set("uTint", 1f, 0.8f, 0.25f, 0.85f)
             }
             diamondMesh.draw()
         }
@@ -976,7 +1011,18 @@ class GameRenderer(
         p.setMatrix("uViewProj", viewProj)
         p.set("uCamPos", camX, camY, camZ)
         Matrix.setIdentityM(model, 0)
-        if (weapon == app.letadlo.game.Weapon.BOMBS) {
+        if (weapon == app.letadlo.game.Weapon.CANNON) {
+            // dělo: kde bude koule za 2,4 s (oblouk dolů)
+            combat.predictCannon(f, 2.4f, impact)
+            val dx = impact[0] - camX
+            val dy = impact[1] - camY
+            val dz = impact[2] - camZ
+            val s = sqrt(dx * dx + dy * dy + dz * dz) * 0.03f
+            model[0] = view[0] * s; model[1] = view[4] * s; model[2] = view[8] * s
+            model[4] = view[1] * s; model[5] = view[5] * s; model[6] = view[9] * s
+            model[8] = view[2] * s; model[9] = view[6] * s; model[10] = view[10] * s
+            model[12] = impact[0]; model[13] = impact[1]; model[14] = impact[2]
+        } else if (weapon == app.letadlo.game.Weapon.BOMBS) {
             // bombardér: kruh na zemi tam, kam by teď bomba dopadla (velikost = dosah ničení)
             if (!combat.predictBombImpact(f, impact)) return
             val s = Combat.BOMB_BLAST * 0.42f
@@ -1004,7 +1050,7 @@ class GameRenderer(
         }
         p.setMatrix("uModel", model)
         p.set("uMode", Shaders.MODE_EFFECT)
-        p.set("uTint", 0.35f, 1f, 0.45f, 0.72f)
+        if (weapon == app.letadlo.game.Weapon.CANNON) p.set("uTint", 1f, 0.62f, 0.22f, 0.8f) else p.set("uTint", 0.35f, 1f, 0.45f, 0.72f)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)

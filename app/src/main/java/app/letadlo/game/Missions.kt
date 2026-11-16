@@ -11,7 +11,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-enum class GoalKind { RING, GROUND_TARGET, AIR_TARGET, PICKUP, DROPOFF, RUNWAY }
+enum class GoalKind { RING, GROUND_TARGET, AIR_TARGET, PICKUP, DROPOFF, RUNWAY, GEAR }
 
 /** Cíl mise: kruh k průletu, terč ke zničení, místo k přistání… */
 class Goal(val kind: GoalKind, var x: Float, var y: Float, var z: Float, val radius: Float, val style: Int = 0) {
@@ -26,6 +26,13 @@ class Goal(val kind: GoalKind, var x: Float, var y: Float, var z: Float, val rad
     var vz = 0f
     var spawnDist = 1000f
     var dead = false
+    /** Kroužící cíl (pirát): střed a poloměr dráhy. */
+    var cx = 0f
+    var cz = 0f
+    var orbit = 0f
+    var angle = 0f
+    /** Pořadí ozubeného kola v řetězu. */
+    var order = 0
 }
 
 class Popup(val text: String, val points: Int)
@@ -37,12 +44,14 @@ object TargetStyle {
     const val TANK = 2
     const val FACTORY = 3
     const val BALLOON = 10
+    const val PIRATE = 11
 
     fun radius(style: Int): Float = when (style) {
         RADAR -> 9f
         FUEL -> 13f
         TANK -> 6f
         FACTORY -> 24f
+        PIRATE -> 14f
         else -> 8f
     }
 
@@ -51,6 +60,7 @@ object TargetStyle {
         FUEL -> "Sklad paliva"
         TANK -> "Tank zničen"
         FACTORY -> "Továrna zničena"
+        PIRATE -> "Piráti sestřeleni"
         else -> "Balon sestřelen"
     }
 
@@ -59,6 +69,7 @@ object TargetStyle {
         FUEL -> 500
         TANK -> 450
         FACTORY -> 700
+        PIRATE -> 650
         else -> 300
     }
 }
@@ -116,6 +127,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.AIRLINER -> 60f
         AircraftType.BOMBER -> 45f
         AircraftType.HELICOPTER -> 16f
+        AircraftType.AIRSHIP -> 30f
     }
     private val lowLimit = when (type) {
         AircraftType.SPORT -> 45f
@@ -123,8 +135,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.AIRLINER -> 120f
         AircraftType.BOMBER -> 90f
         AircraftType.HELICOPTER -> 25f
+        AircraftType.AIRSHIP -> 40f
     }
-    private val cruise = if (type.helicopter) type.maxSpeed else sqrt(type.thrust / type.drag)
+    private val cruise = type.cruise
+    private var chainTotal = 0
+    private var chainGot = 0
 
     fun reset() {
         score = 0; multiplier = 1; comboLeft = 0f
@@ -143,7 +158,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
             combat?.recentExplosions?.clear()
             return
         }
-        if (!started && (f.hasTakenOff || type.helicopter)) {
+        if (!started && (f.hasTakenOff || type.vertical)) {
             started = true
             seenLandings = f.landings
             start(f)
@@ -171,6 +186,13 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
                 } else {
                     g.x = nx; g.z = nz; g.y = gh
                 }
+            } else if (g.kind == GoalKind.AIR_TARGET && g.style == TargetStyle.PIRATE) {
+                // pirát krouží kolem svého stanoviště
+                g.angle += dt * 18f / g.orbit
+                g.x = g.cx + cos(g.angle) * g.orbit
+                g.z = g.cz + sin(g.angle) * g.orbit
+                g.vx = -sin(g.angle) * 18f
+                g.vz = cos(g.angle) * 18f
             } else if (g.kind == GoalKind.AIR_TARGET) {
                 g.x += g.vx * dt
                 g.z += g.vz * dt
@@ -181,6 +203,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         updateRings(f)
         if (combat != null) updateTargets(f, combat)
         if (type.helicopter) updateRescue(dt, f)
+        if (type.airship) updateGears(f)
         if (type == AircraftType.AIRLINER) updateAirliner(dt, f)
         if (started) refreshTargets(f)
         objective = describe(f)
@@ -198,6 +221,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
             }
             AircraftType.HELICOPTER -> spawnPickup(f)
             AircraftType.BOMBER -> Unit
+            AircraftType.AIRSHIP -> Unit
         }
     }
 
@@ -245,7 +269,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
 
     private fun updateNearMiss(f: FlightModel) {
         if (f.phase != FlightPhase.AIRBORNE || nearCooldown > 0f || f.speed < cruise * 0.45f) return
-        val probe = if (type.helicopter) world.hitObstacle(f.x, f.y + 1.5f, f.z, 14f) else world.hitObstacle(f.x, f.y, f.z, type.radius + 14f)
+        val probe = when {
+            type.helicopter -> world.hitObstacle(f.x, f.y + 1.5f, f.z, 14f)
+            type.airship -> world.hitObstacle(f.x, f.y - 4f, f.z, 26f)
+            else -> world.hitObstacle(f.x, f.y, f.z, type.radius + 14f)
+        }
         if (probe != null) {
             nearCooldown = 1.6f
             nearMisses++
@@ -256,7 +284,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     private fun updateLandings(f: FlightModel) {
         if (f.landings <= seenLandings) return
         seenLandings = f.landings
-        if (type.helicopter || !f.lastLandingOnRunway) return
+        if (type.vertical || !f.lastLandingOnRunway) return
         val vs = f.touchdownVs
         val (stars, base) = when {
             vs > -1.3f -> Pair("★★★", 1500)
@@ -299,6 +327,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.AIRLINER -> 3800f
         AircraftType.BOMBER -> 2200f
         AircraftType.HELICOPTER -> 600f
+        AircraftType.AIRSHIP -> 600f
     }
 
     private fun ringHeights(city: Boolean): Pair<Float, Float> = when {
@@ -503,7 +532,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     // ------------------------------------------------------------------ cíle (stíhačka, bombardér)
 
     private fun refreshTargets(f: FlightModel) {
-        val wantAir = if (type == AircraftType.FIGHTER) 2 else 0
+        val wantAir = when (type) {
+            AircraftType.FIGHTER -> 2
+            AircraftType.AIRSHIP -> 2
+            else -> 0
+        }
         val wantGround = when (type) {
             AircraftType.FIGHTER -> 2
             AircraftType.BOMBER -> 3
@@ -563,6 +596,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     }
 
     private fun spawnAirTarget(f: FlightModel): Goal? {
+        if (type.airship) return spawnPirate(f)
         for (k in 0 until 10) {
             val ang = f.heading + (rnd.nextFloat() - 0.5f) * 2.2f
             val d = 1200f + rnd.nextFloat() * 1800f
@@ -582,7 +616,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     }
 
     private fun updateTargets(f: FlightModel, combat: Combat) {
-        // přímý zásah balonu raketou
+        // přímý zásah balonu raketou nebo piráta dělovou koulí
         for (g in goals) {
             if (g.kind != GoalKind.AIR_TARGET || g.dead) continue
             val hit = combat.rockets.firstOrNull {
@@ -590,6 +624,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
                 dx * dx + dy * dy + dz * dz < (g.radius + 5f) * (g.radius + 5f)
             }
             if (hit != null) combat.detonate(hit)
+            val shell = combat.shells.firstOrNull {
+                val dx = it.x - g.x; val dy = it.y - g.y; val dz = it.z - g.z
+                dx * dx + dy * dy + dz * dz < (g.radius + 6f) * (g.radius + 6f)
+            }
+            if (shell != null) combat.detonateShell(shell)
         }
         val secondary = ArrayList<FloatArray>()
         for (e in combat.recentExplosions) {
@@ -614,6 +653,90 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
             }
         }
         for (s in secondary) combat.explosion(s[0], s[1], s[2], s[3])
+    }
+
+    // ------------------------------------------------------------------ vzducholoď: ozubená kola a piráti
+
+    /** Pirátská vzducholoď kroužící nad krajinou před hráčem. */
+    private fun spawnPirate(f: FlightModel): Goal? {
+        for (k in 0 until 12) {
+            val ang = f.heading + (rnd.nextFloat() - 0.5f) * 2.4f
+            val d = 900f + rnd.nextFloat() * 1600f
+            val cx = f.x + sin(ang) * d
+            val cz = f.z - cos(ang) * d
+            val orbit = 160f + rnd.nextFloat() * 160f
+            // nejvyšší terén na kružnici, ať pirát nenarazí do kopce
+            var top = 0f
+            for (s in 0 until 8) {
+                val a = (2 * PI * s / 8).toFloat()
+                top = max(top, world.surfaceHeight(cx + cos(a) * orbit, cz + sin(a) * orbit))
+            }
+            val y = min(top + 110f + rnd.nextFloat() * 200f, type.ceiling - 100f)
+            if (y < top + 80f) continue
+            val a0 = rnd.nextFloat() * 2f * PI.toFloat()
+            return Goal(GoalKind.AIR_TARGET, cx + cos(a0) * orbit, y, cz + sin(a0) * orbit, TargetStyle.radius(TargetStyle.PIRATE), TargetStyle.PIRATE).also {
+                it.cx = cx; it.cz = cz; it.orbit = orbit; it.angle = a0
+            }
+        }
+        return null
+    }
+
+    /** Řetěz zlatých ozubených kol po plynulé křivce údolími a mezi domy. */
+    fun spawnGearChain(f: FlightModel) {
+        goals.removeAll { it.kind == GoalKind.GEAR }
+        var h = f.heading + (rnd.nextFloat() - 0.5f) * 0.6f
+        var x = f.x + sin(h) * 260f
+        var z = f.z - cos(h) * 260f
+        var y = max(f.y, world.surfaceHeight(x, z) + 60f)
+        var turn = (rnd.nextFloat() - 0.5f) * 0.5f
+        val count = 10
+        for (i in 0 until count) {
+            turn = (turn + (rnd.nextFloat() - 0.5f) * 0.35f).coerceIn(-0.45f, 0.45f)
+            h += turn * 0.5f
+            x += sin(h) * 115f
+            z -= cos(h) * 115f
+            val gh = world.surfaceHeight(x, z)
+            val want = gh + 45f + rnd.nextFloat() * 70f
+            y += (want - y) * 0.5f
+            y = max(y, gh + 30f)
+            if (world.hitObstacle(x, y, z, 16f) != null) y = gh + 170f
+            y = min(y, type.ceiling - 60f)
+            goals.add(Goal(GoalKind.GEAR, x, y, z, 14f).also { it.order = i })
+        }
+        chainTotal = count
+        chainGot = 0
+    }
+
+    private fun updateGears(f: FlightModel) {
+        if (!started) return
+        val gears = goals.filter { it.kind == GoalKind.GEAR }
+        if (gears.isEmpty()) {
+            spawnGearChain(f)
+            return
+        }
+        var nearestD2 = Float.MAX_VALUE
+        for (g in gears) {
+            // sbírá se balonem i gondolou
+            val dx = g.x - f.x
+            val dz = g.z - f.z
+            val dyB = g.y - f.y
+            val dyG = g.y - (f.y - 10f)
+            val d2 = dx * dx + dz * dz + min(dyB * dyB, dyG * dyG)
+            nearestD2 = min(nearestD2, dx * dx + dz * dz)
+            if (d2 < 20f * 20f) {
+                goals.remove(g)
+                chainGot++
+                f.addSteam(0.12f)
+                award(60, "⚙", false)
+            }
+        }
+        if (chainGot >= chainTotal && goals.none { it.kind == GoalKind.GEAR }) {
+            award(600, "Řetěz kompletní", true)
+            spawnGearChain(f)
+        } else if (nearestD2 > 1800f * 1800f) {
+            popups.add(Popup("Řetěz ztracen – nový před tebou", 0))
+            spawnGearChain(f)
+        }
     }
 
     // ------------------------------------------------------------------ záchrana (vrtulník)
@@ -730,6 +853,12 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
                 if (ring != null) "◯ Kruh · ${d(ring)}   🎯 cíle: $t" else "🎯 cíle: $t"
             }
             AircraftType.SPORT -> nearest(f, setOf(GoalKind.RING))?.let { "◯ Kruh · ${d(it)}" } ?: "◯ Vzlétni a leť kruhy"
+            AircraftType.AIRSHIP -> {
+                val next = goals.filter { it.kind == GoalKind.GEAR }.minByOrNull { it.order }
+                val pirates = goals.count { it.kind == GoalKind.AIR_TARGET && !it.dead }
+                val gearText = if (next != null) "⚙ Kola $chainGot/$chainTotal · ${d(next)}" else "⚙ Vzlétni a sbírej kola"
+                "$gearText   ☠ piráti: $pirates"
+            }
         }
     }
 

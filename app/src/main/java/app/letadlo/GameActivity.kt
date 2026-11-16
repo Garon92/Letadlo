@@ -44,6 +44,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
     private lateinit var hudLow: TextView
     private lateinit var hudPopup: TextView
     private val recentPopups = ArrayList<String>()
+    private var steamBar: ProgressBar? = null
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: GameRenderer
     private lateinit var tilt: TiltInput
@@ -109,11 +110,34 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudPopup = findViewById(R.id.hudPopup)
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
         val btnFire = findViewById<ImageView>(R.id.btnFire)
-        if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER) {
+        if (aircraft.airship) {
+            // vzducholoď: drž páru = zrychlení
+            findViewById<View>(R.id.steamBox).visibility = View.VISIBLE
+            steamBar = findViewById(R.id.steamBar)
+            findViewById<View>(R.id.btnSteam).setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        renderer.flight.boostInput = true
+                        v.isPressed = true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        renderer.flight.boostInput = false
+                        v.isPressed = false
+                        v.performClick()
+                    }
+                }
+                true
+            }
+        }
+        if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER || aircraft.airship) {
             btnFire.visibility = View.VISIBLE
             if (aircraft == AircraftType.BOMBER) {
                 btnFire.setImageResource(R.drawable.ic_bomb)
                 btnFire.contentDescription = "Shodit bombu"
+            }
+            if (aircraft.airship) {
+                btnFire.setImageResource(R.drawable.ic_cannon)
+                btnFire.contentDescription = "Vystřelit z děla"
             }
             // drž = střílí bez omezení
             btnFire.setOnTouchListener { v, e ->
@@ -236,6 +260,8 @@ class GameActivity : Activity(), GameRenderer.Listener {
         hudObjective.text = s.objective
         hudLow.visibility = if (s.lowFlying) View.VISIBLE else View.INVISIBLE
         if (s.popups.isNotEmpty()) showPopups(s.popups)
+        steamBar?.progress = (s.steam * 100f).toInt()
+        sound?.boosting = s.boosting
 
         val text: String? = when {
             s.phase == FlightPhase.CRASHED -> null
@@ -245,10 +271,15 @@ class GameActivity : Activity(), GameRenderer.Listener {
             s.phase == FlightPhase.ROLLING && s.readyForTakeoff && s.hasTakenOff -> "Přistání! Nakloň telefon k sobě a leť dál."
             s.phase == FlightPhase.ROLLING && s.readyForTakeoff -> "Teď! Nakloň horní hranu telefonu k sobě ⤴"
             s.phase == FlightPhase.ROLLING && aircraft.helicopter -> "Roztáčím rotor…"
+            s.phase == FlightPhase.ROLLING && aircraft.airship -> "Zatápím v kotli…"
             s.phase == FlightPhase.ROLLING && !s.hasTakenOff ->
                 String.format(Locale.ROOT, "Rozjezd… vzlet při %d km/h", (aircraft.rotateSpeed * 3.6f).toInt())
             s.phase == FlightPhase.AIRBORNE && s.airTime < 6f ->
-                if (aircraft.helicopter) "Letíš! K sobě = stoupání, od sebe = klesání." else "Letíš! Natáčením telefonu zatáčíš."
+                when {
+                    aircraft.airship -> "Pluješ! K sobě = stoupání. Sbírej kola, střílej piráty."
+                    aircraft.helicopter -> "Letíš! K sobě = stoupání, od sebe = klesání."
+                    else -> "Letíš! Natáčením telefonu zatáčíš."
+                }
             else -> null
         }
         if (text == null) {
@@ -283,7 +314,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     override fun onWeapons(launches: Int, booms: Int) {
         sound?.let {
-            repeat(launches) { _ -> if (aircraft == AircraftType.BOMBER) it.whistle() else it.launch() }
+            repeat(launches) { _ ->
+                when {
+                    aircraft == AircraftType.BOMBER -> it.whistle()
+                    aircraft.airship -> it.boom()
+                    else -> it.launch()
+                }
+            }
             repeat(booms) { _ -> it.boom() }
         }
     }

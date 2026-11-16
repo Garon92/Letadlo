@@ -75,7 +75,24 @@ enum class AircraftType(
         maxBankDeg = 45f, maxPitchUpDeg = 25f, maxPitchDownDeg = 28f,
         bankRate = 2.4f, pitchRate = 2f, maxTurnDeg = 12f, ceiling = 4000f,
         blastRadius = 170f, engineTone = 0.85f,
+    ),
+    AIRSHIP(
+        "Vzducholoď", "⚙️", false,
+        rotateSpeed = 0f, stallSpeed = 0f, groundThrust = 0f, thrust = 0f, drag = 0f,
+        minSpeed = 0f, maxSpeed = 35f, gearHeight = 13.2f, radius = 9f,
+        maxBankDeg = 8f, maxPitchUpDeg = 0f, maxPitchDownDeg = 0f,
+        bankRate = 1.5f, pitchRate = 1f, maxTurnDeg = 16f, ceiling = 3000f,
+        blastRadius = 160f, engineTone = 0.6f,
     );
+
+    /** Steampunk vzducholoď – vznáší se, letí pomalu, má páru na zrychlení. */
+    val airship: Boolean get() = this == AIRSHIP
+
+    /** Svislý vzlet a přistání kdekoli (vrtulník, vzducholoď). */
+    val vertical: Boolean get() = helicopter || airship
+
+    /** Cestovní rychlost (m/s). */
+    val cruise: Float get() = if (vertical) maxSpeed else kotlin.math.sqrt(thrust / drag)
 
     companion object {
         fun fromName(name: String?): AircraftType = entries.firstOrNull { it.name == name } ?: SPORT

@@ -21,7 +21,7 @@ class FlightModelTest {
 
     @Test
     fun everyPlaneAcceleratesOnRunwayAndTakesOffWhenPulledBack() {
-        for (type in AircraftType.entries.filter { !it.helicopter }) for (map in MapType.entries) {
+        for (type in AircraftType.entries.filter { !it.vertical }) for (map in MapType.entries) {
             val f = FlightModel(World(map), type)
             var t = 0f
             while (f.speed < type.rotateSpeed && t < 40f) {
@@ -43,11 +43,11 @@ class FlightModelTest {
     fun cruiseSpeedsAreRealistic() {
         val minKmh = mapOf(
             AircraftType.SPORT to 250f, AircraftType.FIGHTER to 2000f, AircraftType.AIRLINER to 750f,
-            AircraftType.HELICOPTER to 230f, AircraftType.BOMBER to 420f,
+            AircraftType.HELICOPTER to 230f, AircraftType.BOMBER to 420f, AircraftType.AIRSHIP to 110f,
         )
         for (type in AircraftType.entries) {
             val f = FlightModel(World(MapType.COUNTRYSIDE), type)
-            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.helicopter) 10f else type.rotateSpeed + 5f)
+            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.vertical) 10f else type.rotateSpeed + 5f)
             run(f, 120f, 0f, 0f)
             val kmh = f.speed * 3.6f
             assertTrue("$type letí $kmh km/h", kmh >= minKmh.getValue(type))
@@ -56,7 +56,7 @@ class FlightModelTest {
 
     @Test
     fun fullClimbAfterTakeoffNeverNearsStall() {
-        for (type in AircraftType.entries.filter { !it.helicopter }) {
+        for (type in AircraftType.entries.filter { !it.vertical }) {
             val f = FlightModel(World(MapType.COUNTRYSIDE), type)
             f.placeInAir(0f, 800f, -20000f, 0f, type.rotateSpeed + 2f)
             var minSpeed = Float.MAX_VALUE
@@ -78,7 +78,7 @@ class FlightModelTest {
     fun smallBankAlreadyTurns() {
         for (type in AircraftType.entries) {
             val f = FlightModel(World(MapType.COUNTRYSIDE), type)
-            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.helicopter) 60f else type.rotateSpeed * 2f)
+            f.placeInAir(0f, 2000f, -20000f, 0f, if (type.vertical) 60f else type.rotateSpeed * 2f)
             run(f, 3f, 0.3f, 0f)
             val degPerS = Math.toDegrees(f.heading.toDouble()) / 3.0
             assertTrue("$type: třetinová výchylka točí ${"%.1f".format(degPerS)} °/s", degPerS > type.maxTurnDeg * 0.15)
