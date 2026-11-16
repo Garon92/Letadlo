@@ -7,7 +7,7 @@ import android.view.View
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.CheckBox
-import android.widget.LinearLayout
+import android.widget.GridLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import app.letadlo.game.AircraftType
@@ -25,14 +25,16 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.menuContent).applySafeInsets()
 
         selected = Records.aircraft(this)
-        val row = findViewById<LinearLayout>(R.id.aircraftRow)
+        // letadla v mřížce 4 + 3 – žádné vodorovné posouvání
+        val grid = findViewById<GridLayout>(R.id.aircraftGrid)
         val dp = resources.displayMetrics.density
         for (t in AircraftType.entries) {
             val chip = TextView(this).apply {
                 text = "${t.emoji} ${t.title}"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 gravity = Gravity.CENTER
-                setPadding((14 * dp).toInt(), (8 * dp).toInt(), (14 * dp).toInt(), (8 * dp).toInt())
+                maxLines = 1
+                setPadding((6 * dp).toInt(), (7 * dp).toInt(), (6 * dp).toInt(), (7 * dp).toInt())
                 setBackgroundResource(R.drawable.chip_bg)
                 isClickable = true
                 isFocusable = true
@@ -44,9 +46,14 @@ class MainActivity : Activity() {
                     refreshRecords()
                 }
             }
-            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            lp.marginEnd = (8 * dp).toInt()
-            row.addView(chip, lp)
+            val lp = GridLayout.LayoutParams(
+                GridLayout.spec(GridLayout.UNDEFINED),
+                GridLayout.spec(GridLayout.UNDEFINED, 1f),
+            )
+            lp.width = 0
+            val m = (3 * dp).toInt()
+            lp.setMargins(m, m, m, m)
+            grid.addView(chip, lp)
             chips.add(chip)
         }
         refreshChips()
@@ -91,9 +98,7 @@ class MainActivity : Activity() {
     }
 
     private fun showSensitivity(label: TextView, value: Int) {
-        label.text = String.format(
-            Locale.ROOT, "Citlivost náklonu: %d  (plná zatáčka při %.0f°)", value, TiltInput.fullRollDeg(value),
-        )
+        label.text = String.format(Locale.ROOT, "%d · %.0f°", value, TiltInput.fullRollDeg(value))
     }
 
     private fun refreshChips() {

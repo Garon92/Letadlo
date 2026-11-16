@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Letadlo</string>
-    <string name="menu_subtitle">Letecký simulátor ovládaný jen náklonem telefonu</string>
-    <string name="menu_howto">Drž telefon na šířku jako volant. Natočení doleva/doprava = zatáčka, horní hrana k sobě = stoupání, od sebe = klesání. Ťuknutím na obrazovku během letu telefon znovu zkalibruješ. Vrtulník vzlétá svisle a náklon k sobě znamená stoupání. Kulatá tlačítka vpravo přepínají pohled z kabiny a den/noc.</string>
-    <string name="menu_pick_map">Vyber mapu a leť</string>
-    <string name="menu_pick_aircraft">Vyber letadlo</string>
+    <string name="menu_subtitle">vyber letadlo a klepni na mapu</string>
+    <string name="sensitivity">Citlivost</string>
+    <string name="sound_short">Zvuk</string>
     <string name="view_toggle">Přepnout pohled z kabiny / zvenku</string>
     <string name="time_toggle">Přepnout den / noc</string>
     <string name="fire">Palba raket</string>
