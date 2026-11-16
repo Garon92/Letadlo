@@ -43,6 +43,9 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         const val AIRSHIP_SINK = 16f
         /** Rychlost vzducholodi s párou naplno. */
         const val AIRSHIP_BOOST = 60f
+        /** Dron: nejvyšší rychlost ve střemhlavém letu. */
+        const val DRONE_DIVE = 58f
+        const val FLIP_TIME = 0.45f
 
         fun rad(deg: Float): Float = (deg * PI / 180.0).toFloat()
     }
@@ -91,6 +94,21 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     /** Hráč drží tlačítko páry. */
     @Volatile var boostInput = false
 
+    /** Salto dronu: zbývající čas a natočení kolem podélné osy (jen vizuálně). */
+    var flipTime = 0f; private set
+    var flipRoll = 0f; private set
+    private var flipDir = 1f
+    /** Počet dokončených salt (pro body). */
+    var flips = 0; private set
+
+    /** Dron udělá přemet o 360°. Vrací false, když to teď nejde. */
+    fun startFlip(): Boolean {
+        if (!type.drone || phase != FlightPhase.AIRBORNE || flipTime > 0f) return false
+        flipTime = FLIP_TIME
+        flipDir = if (bank < 0f) -1f else 1f
+        return true
+    }
+
     val boosting: Boolean
         get() = type.airship && boostInput && steam > 0.02f && phase == FlightPhase.AIRBORNE
 
@@ -130,6 +148,9 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         brake = false
         steam = 1f
         boostInput = false
+        flipTime = 0f
+        flipRoll = 0f
+        flips = 0
     }
 
     /** Umístí letadlo rovnou do vzduchu (pro testy). */
@@ -155,13 +176,18 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         propeller += when {
             type.helicopter -> dt * 6.5f * rotorSpin
             type.airship -> dt * rotorSpin * (1.5f + speed * 0.06f)
+            type.drone -> dt * rotorSpin * (35f + speed * 0.8f)
             else -> dt * (20f + speed * 0.6f)
         }
         if (propeller > 1000f) propeller -= 1000f
         if (type.vertical) {
             when (phase) {
                 FlightPhase.ROLLING -> updateHeliGround(dt, p)
-                FlightPhase.AIRBORNE -> if (type.airship) updateAirshipAir(dt, r, p) else updateHeliAir(dt, r, p)
+                FlightPhase.AIRBORNE -> when {
+                    type.airship -> updateAirshipAir(dt, r, p)
+                    type.drone -> updateDroneAir(dt, r, p)
+                    else -> updateHeliAir(dt, r, p)
+                }
                 FlightPhase.CRASHED -> Unit
             }
         } else {
@@ -244,7 +270,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     // ------------------------------------------------------------------ vrtulník
 
     private fun updateHeliGround(dt: Float, p: Float) {
-        rotorSpin = min(1f, rotorSpin + dt / HELI_SPIN_UP)
+        rotorSpin = min(1f, rotorSpin + dt / if (type.drone) 1f else HELI_SPIN_UP)
         speed = approach(speed, 0f, dt, 1.5f)
         bank = approach(bank, 0f, dt, 6f)
         pitch = approach(pitch, 0f, dt, 4f)
@@ -325,6 +351,45 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         if (phase == FlightPhase.AIRBORNE) maxAltitudeAgl = max(maxAltitudeAgl, altitudeAgl)
     }
 
+    // ------------------------------------------------------------------ FPV dron
+
+    private fun updateDroneAir(dt: Float, r: Float, p: Float) {
+        airTime += dt
+        rotorSpin = 1f
+        bank = approach(bank, r * maxBank, dt, type.bankRate)
+        var targetPitch = if (p >= 0f) p * maxPitchUp else p * maxPitchDown
+        if (y > type.ceiling) targetPitch = min(targetPitch, -rad(3f))
+        pitch = approach(pitch, targetPitch, dt, type.pitchRate)
+        heading += maxTurn * (bank / maxBank) * dt
+        wrapHeading()
+        // střemhlav zrychluje, do kopce zpomaluje; nikdy nepadá
+        val targetSpeed = (type.maxSpeed - 18f * sin(pitch)).coerceIn(22f, DRONE_DIVE)
+        speed = approach(speed, targetSpeed, dt, 1.6f)
+
+        if (flipTime > 0f) {
+            flipTime -= dt
+            flipRoll = flipDir * (1f - max(0f, flipTime) / FLIP_TIME) * (2f * PI.toFloat())
+            if (flipTime <= 0f) {
+                flipTime = 0f
+                flipRoll = 0f
+                flips++
+            }
+        }
+
+        val cp = cos(pitch)
+        val dx = sin(heading) * cp * speed * dt
+        val dz = -cos(heading) * cp * speed * dt
+        val dy = sin(pitch) * speed * dt
+        x += dx
+        y += dy
+        z += dz
+        verticalSpeed = dy / dt
+        distance += sqrt(dx * dx + dz * dz)
+
+        checkCollisions()
+        if (phase == FlightPhase.AIRBORNE) maxAltitudeAgl = max(maxAltitudeAgl, altitudeAgl)
+    }
+
     /** Vzducholoď je dlouhá – kontroluje se příď, střed, záď balonu a gondola. */
     private fun airshipHit(): ObstacleKind? {
         val fx = sin(heading)
@@ -375,6 +440,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         // vrtulník: kolizní koule nad ližinami, aby šlo sednout na střechu i z ní vzlétnout
         val hit = when {
             type.airship -> airshipHit()
+            type.drone -> world.hitObstacle(x, y, z, type.radius)
             heli -> world.hitObstacle(x, y + 1.5f, z, 3f)
             else -> world.hitObstacle(x, y, z, type.radius)
         }

@@ -92,7 +92,8 @@ class GameActivity : Activity(), GameRenderer.Listener {
         findViewById<TextView>(R.id.hudMap).text = "${map.title} · ${aircraft.title}"
 
         renderer = GameRenderer(map, aircraft, tilt, this)
-        renderer.viewMode = if (Records.cockpit(this)) 1 else 0
+        // dron startuje v FPV pohledu, ostatní podle posledního nastavení
+        renderer.viewMode = if (aircraft.drone || Records.cockpit(this)) 1 else 0
         btnView = findViewById(R.id.btnView)
         btnTime = findViewById(R.id.btnTime)
         updateToggleIcons()
@@ -100,7 +101,7 @@ class GameActivity : Activity(), GameRenderer.Listener {
             // zvenku → z kabiny → (bombardér) pohled dolů → zvenku
             val modes = if (aircraft == AircraftType.BOMBER) 3 else 2
             renderer.viewMode = (renderer.viewMode + 1) % modes
-            Records.setCockpit(this, renderer.viewMode == 1)
+            if (!aircraft.drone) Records.setCockpit(this, renderer.viewMode == 1)
             updateToggleIcons()
         }
         hudScore = findViewById(R.id.hudScore)
@@ -127,6 +128,17 @@ class GameActivity : Activity(), GameRenderer.Listener {
                     }
                 }
                 true
+            }
+        }
+        if (aircraft.drone) {
+            // dron: tlačítko vlevo = salto
+            btnFire.visibility = View.VISIBLE
+            btnFire.setImageResource(R.drawable.ic_flip)
+            btnFire.setBackgroundResource(R.drawable.steam_button)
+            btnFire.contentDescription = "Salto"
+            btnFire.setOnClickListener {
+                val f = renderer.flight
+                glView.queueEvent { f.startFlip() }
             }
         }
         if (aircraft == AircraftType.FIGHTER || aircraft == AircraftType.BOMBER || aircraft.airship) {
@@ -185,8 +197,10 @@ class GameActivity : Activity(), GameRenderer.Listener {
 
     /** Ikona ukazuje, co je právě zapnuté: ✈️ zvenku / 💺 z kabiny, ☀️ den / 🌙 noc. */
     private fun updateToggleIcons() {
+        findViewById<View>(R.id.fpvOverlay).visibility =
+            if (aircraft.drone && renderer.viewMode == 1) View.VISIBLE else View.GONE
         btnView.text = when (renderer.viewMode) {
-            1 -> "💺"
+            1 -> if (aircraft.drone) "🎥" else "💺"
             2 -> "🎯"
             else -> "✈️"
         }
@@ -272,11 +286,13 @@ class GameActivity : Activity(), GameRenderer.Listener {
             s.phase == FlightPhase.ROLLING && s.readyForTakeoff -> "Teď! Nakloň horní hranu telefonu k sobě ⤴"
             s.phase == FlightPhase.ROLLING && aircraft.helicopter -> "Roztáčím rotor…"
             s.phase == FlightPhase.ROLLING && aircraft.airship -> "Zatápím v kotli…"
+            s.phase == FlightPhase.ROLLING && aircraft.drone -> "Zapínám motory…"
             s.phase == FlightPhase.ROLLING && !s.hasTakenOff ->
                 String.format(Locale.ROOT, "Rozjezd… vzlet při %d km/h", (aircraft.rotateSpeed * 3.6f).toInt())
             s.phase == FlightPhase.AIRBORNE && s.airTime < 6f ->
                 when {
                     aircraft.airship -> "Pluješ! K sobě = stoupání. Sbírej kola, střílej piráty."
+                    aircraft.drone -> "Leť neonovými branami! Tlačítko vlevo = salto."
                     aircraft.helicopter -> "Letíš! K sobě = stoupání, od sebe = klesání."
                     else -> "Letíš! Natáčením telefonu zatáčíš."
                 }

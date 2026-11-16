@@ -83,13 +83,24 @@ enum class AircraftType(
         maxBankDeg = 8f, maxPitchUpDeg = 0f, maxPitchDownDeg = 0f,
         bankRate = 1.5f, pitchRate = 1f, maxTurnDeg = 16f, ceiling = 3000f,
         blastRadius = 160f, engineTone = 0.6f,
+    ),
+    DRONE(
+        "FPV dron", "🎥", false,
+        rotateSpeed = 0f, stallSpeed = 0f, groundThrust = 0f, thrust = 0f, drag = 0f,
+        minSpeed = 0f, maxSpeed = 42f, gearHeight = 0.05f, radius = 0.45f,
+        maxBankDeg = 70f, maxPitchUpDeg = 60f, maxPitchDownDeg = 65f,
+        bankRate = 9f, pitchRate = 6f, maxTurnDeg = 150f, ceiling = 2500f,
+        blastRadius = 22f, engineTone = 3f,
     );
+
+    /** Závodní FPV dron – malý, rychlý a extrémně obratný. */
+    val drone: Boolean get() = this == DRONE
 
     /** Steampunk vzducholoď – vznáší se, letí pomalu, má páru na zrychlení. */
     val airship: Boolean get() = this == AIRSHIP
 
     /** Svislý vzlet a přistání kdekoli (vrtulník, vzducholoď). */
-    val vertical: Boolean get() = helicopter || airship
+    val vertical: Boolean get() = helicopter || airship || drone
 
     /** Cestovní rychlost (m/s). */
     val cruise: Float get() = if (vertical) maxSpeed else kotlin.math.sqrt(thrust / drag)

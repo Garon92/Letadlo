@@ -11,7 +11,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-enum class GoalKind { RING, GROUND_TARGET, AIR_TARGET, PICKUP, DROPOFF, RUNWAY, GEAR }
+enum class GoalKind { RING, GROUND_TARGET, AIR_TARGET, PICKUP, DROPOFF, RUNWAY, GEAR, GATE }
 
 /** Cíl mise: kruh k průletu, terč ke zničení, místo k přistání… */
 class Goal(val kind: GoalKind, var x: Float, var y: Float, var z: Float, val radius: Float, val style: Int = 0) {
@@ -104,6 +104,8 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     var rescued = 0; private set
     var landingsScored = 0; private set
     var nearMisses = 0; private set
+    var gates = 0; private set
+    var flipsScored = 0; private set
     val goals = ArrayList<Goal>()
     val popups = ArrayList<Popup>()
     var objective = ""; private set
@@ -128,6 +130,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.BOMBER -> 45f
         AircraftType.HELICOPTER -> 16f
         AircraftType.AIRSHIP -> 30f
+        AircraftType.DRONE -> 3.5f
     }
     private val lowLimit = when (type) {
         AircraftType.SPORT -> 45f
@@ -136,14 +139,19 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.BOMBER -> 90f
         AircraftType.HELICOPTER -> 25f
         AircraftType.AIRSHIP -> 40f
+        AircraftType.DRONE -> 12f
     }
     private val cruise = type.cruise
     private var chainTotal = 0
     private var chainGot = 0
+    private var lapGates = 0
+    private var lapTime = 0f
+    private var seenFlips = 0
 
     fun reset() {
         score = 0; multiplier = 1; comboLeft = 0f
         rings = 0; targets = 0; rescued = 0; landingsScored = 0; nearMisses = 0
+        gates = 0; flipsScored = 0; lapGates = 0; lapTime = 0f; seenFlips = 0
         goals.clear(); popups.clear()
         started = false; lowAccum = 0f; lowTimer = 0f; nearCooldown = 0f; seenLandings = 0
         carrying = false; rescueTimer = 0f
@@ -204,6 +212,10 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         if (combat != null) updateTargets(f, combat)
         if (type.helicopter) updateRescue(dt, f)
         if (type.airship) updateGears(f)
+        if (type.drone) {
+            updateGates(dt, f)
+            updateFlips(f)
+        }
         if (type == AircraftType.AIRLINER) updateAirliner(dt, f)
         if (started) refreshTargets(f)
         objective = describe(f)
@@ -222,6 +234,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
             AircraftType.HELICOPTER -> spawnPickup(f)
             AircraftType.BOMBER -> Unit
             AircraftType.AIRSHIP -> Unit
+            AircraftType.DRONE -> startGates(f)
         }
     }
 
@@ -272,10 +285,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         val probe = when {
             type.helicopter -> world.hitObstacle(f.x, f.y + 1.5f, f.z, 14f)
             type.airship -> world.hitObstacle(f.x, f.y - 4f, f.z, 26f)
+            type.drone -> world.hitObstacle(f.x, f.y, f.z, 5f)
             else -> world.hitObstacle(f.x, f.y, f.z, type.radius + 14f)
         }
         if (probe != null) {
-            nearCooldown = 1.6f
+            nearCooldown = if (type.drone) 1.1f else 1.6f
             nearMisses++
             award(150, "Těsně!", false)
         }
@@ -328,6 +342,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         AircraftType.BOMBER -> 2200f
         AircraftType.HELICOPTER -> 600f
         AircraftType.AIRSHIP -> 600f
+        AircraftType.DRONE -> 200f
     }
 
     private fun ringHeights(city: Boolean): Pair<Float, Float> = when {
@@ -655,6 +670,153 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         for (s in secondary) combat.explosion(s[0], s[1], s[2], s[3])
     }
 
+    // ------------------------------------------------------------------ FPV dron: závodní brány
+
+    private fun startGates(f: FlightModel) {
+        goals.removeAll { it.kind == GoalKind.GATE }
+        val first = spawnGate(f.x, f.z, f.heading) ?: return
+        goals.add(first)
+        spawnGate(first.x, first.z, kotlin.math.atan2(first.nx, -first.nz))?.let {
+            it.preview = true
+            goals.add(it)
+        }
+    }
+
+    /**
+     * Neonová brána nízko nad zemí: ve městě v ulici mezi domy, jinde co nejblíž
+     * stromům a domům (aby se kličkovalo), ale vždy průletná.
+     */
+    fun spawnGate(fromX: Float, fromZ: Float, heading: Float): Goal? {
+        val half = 3.5f
+        var best: Goal? = null
+        var bestScore = Float.MAX_VALUE
+        for (k in 0 until 24) {
+            val ang = heading + (rnd.nextFloat() - 0.5f) * 2.2f
+            val d = 110f + rnd.nextFloat() * 170f
+            var px = fromX + sin(ang) * d
+            var pz = fromZ - cos(ang) * d
+            var nx = px - fromX
+            var nz = pz - fromZ
+            if (world.hasCity && world.distToCity(px, pz) < World.CITY_ROAD_RADIUS - 60f) {
+                if (abs(nx) > abs(nz)) {
+                    pz = World.CITY_Z + floor((pz - World.CITY_Z) / World.BLOCK) * World.BLOCK + World.ROAD / 2f
+                    nz = 0f
+                } else {
+                    px = World.CITY_X + floor((px - World.CITY_X) / World.BLOCK) * World.BLOCK + World.ROAD / 2f
+                    nx = 0f
+                }
+            }
+            val nl = sqrt(nx * nx + nz * nz)
+            if (nl < 1e-3f) continue
+            nx /= nl; nz /= nl
+            val gh = world.surfaceHeight(px, pz)
+            val extra = if (world.map == MapType.MOUNTAINS) 18f else 9f
+            val py = gh + half + 1.5f + rnd.nextFloat() * extra
+            if (!gateClear(px, py, pz, half, nx, nz)) continue
+            // čím víc překážek kolem, tím zábavnější průlet
+            var near = 0
+            for (s in 0 until 6) {
+                val a = (2 * PI * s / 6).toFloat()
+                if (world.hitObstacle(px + cos(a) * 14f, py, pz + sin(a) * 14f, 6f) != null) near++
+            }
+            val score = -near + rnd.nextFloat()
+            if (score < bestScore) {
+                bestScore = score
+                best = Goal(GoalKind.GATE, px, py, pz, half).also { it.nx = nx; it.nz = nz; it.spawnDist = d }
+            }
+        }
+        if (best == null) {
+            val px = fromX + sin(heading) * 180f
+            val pz = fromZ - cos(heading) * 180f
+            best = Goal(GoalKind.GATE, px, world.surfaceHeight(px, pz) + 30f, pz, half).also {
+                it.nx = sin(heading); it.nz = -cos(heading); it.spawnDist = 180f
+            }
+        }
+        return best
+    }
+
+    /** Rám brány nesmí zasahovat do terénu, domů ani stromů. */
+    fun gateClear(px: Float, py: Float, pz: Float, half: Float, nx: Float, nz: Float): Boolean {
+        if (world.hitObstacle(px, py, pz, half * 1.2f) != null) return false
+        val sx = -nz
+        val sz = nx
+        for (i in -1..1) for (j in -1..1) {
+            val qx = px + sx * half * i
+            val qz = pz + sz * half * i
+            val qy = py + half * j
+            if (qy < world.groundHeight(qx, qz) + 0.8f) return false
+            if (world.hitObstacle(qx, qy, qz, 0.8f) != null) return false
+        }
+        return true
+    }
+
+    private fun gateResult(g: Goal, f: FlightModel): Int {
+        val dx = f.x - g.x
+        val dy = f.y - g.y
+        val dz = f.z - g.z
+        val side = dx * g.nx + dz * g.nz
+        val prev = g.prevSide
+        g.prevSide = side
+        if (!prev.isNaN() && (prev < 0f) != (side < 0f)) {
+            val lx = dx - side * g.nx
+            val lz = dz - side * g.nz
+            val lateral = sqrt(lx * lx + lz * lz)
+            if (lateral <= g.radius * 1.1f && abs(dy) <= g.radius * 1.1f) return 1
+            if (lateral < g.radius * 4f && abs(dy) < g.radius * 4f) return -1
+        }
+        if (g.age > 6f && sqrt(dx * dx + dz * dz) > g.spawnDist * 2f + 400f) return -1
+        return 0
+    }
+
+    private fun updateGates(dt: Float, f: FlightModel) {
+        if (!started || f.phase != FlightPhase.AIRBORNE && goals.none { it.kind == GoalKind.GATE }) return
+        if (f.phase == FlightPhase.AIRBORNE) lapTime += dt
+        val current = goals.firstOrNull { it.kind == GoalKind.GATE && !it.preview }
+        if (current == null) {
+            if (f.phase == FlightPhase.AIRBORNE) startGates(f)
+            return
+        }
+        when (gateResult(current, f)) {
+            1 -> {
+                goals.remove(current)
+                gates++
+                lapGates++
+                award(120, "Brána", true)
+                if (lapGates >= 10) {
+                    val t = lapTime
+                    val bonus = 500 + (max(0f, 70f - t) * 20f).toInt()
+                    award(bonus, String.format(Locale.ROOT, "Úsek %d:%02d", t.toInt() / 60, t.toInt() % 60), false)
+                    lapGates = 0
+                    lapTime = 0f
+                }
+                val next = goals.firstOrNull { it.kind == GoalKind.GATE && it.preview }
+                if (next != null) {
+                    next.preview = false
+                    next.prevSide = Float.NaN
+                    spawnGate(next.x, next.z, kotlin.math.atan2(next.nx, -next.nz))?.let {
+                        it.preview = true
+                        goals.add(it)
+                    }
+                } else {
+                    startGates(f)
+                }
+            }
+            -1 -> {
+                breakCombo("Minul jsi bránu")
+                startGates(f)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun updateFlips(f: FlightModel) {
+        if (f.flips <= seenFlips) return
+        seenFlips = f.flips
+        flipsScored++
+        val close = f.altitudeAgl < 6f || world.hitObstacle(f.x, f.y, f.z, 8f) != null
+        if (close) award(300, "Těsné salto", false) else award(150, "Salto", false)
+    }
+
     // ------------------------------------------------------------------ vzducholoď: ozubená kola a piráti
 
     /** Pirátská vzducholoď kroužící nad krajinou před hráčem. */
@@ -853,6 +1015,11 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
                 if (ring != null) "◯ Kruh · ${d(ring)}   🎯 cíle: $t" else "🎯 cíle: $t"
             }
             AircraftType.SPORT -> nearest(f, setOf(GoalKind.RING))?.let { "◯ Kruh · ${d(it)}" } ?: "◯ Vzlétni a leť kruhy"
+            AircraftType.DRONE -> {
+                val g = goals.firstOrNull { it.kind == GoalKind.GATE && !it.preview }
+                val time = String.format(Locale.ROOT, "%d:%02d", lapTime.toInt() / 60, lapTime.toInt() % 60)
+                if (g != null) "⬛ Brána ${lapGates + 1}/10 · ${d(g)}   ⏱ $time" else "⬛ Vzlétni a leť branami"
+            }
             AircraftType.AIRSHIP -> {
                 val next = goals.filter { it.kind == GoalKind.GEAR }.minByOrNull { it.order }
                 val pirates = goals.count { it.kind == GoalKind.AIR_TARGET && !it.dead }

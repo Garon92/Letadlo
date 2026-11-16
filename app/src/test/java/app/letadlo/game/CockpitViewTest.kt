@@ -41,8 +41,11 @@ class CockpitViewTest {
                 }
             }
         }
-        add(AircraftMeshes.body(type), true)
-        add(AircraftMeshes.cockpit(type), false)
+        // FPV dron nekreslí vlastní tělo ani kabinu – jen obraz z kamery
+        if (!type.drone) {
+            add(AircraftMeshes.body(type), true)
+            add(AircraftMeshes.cockpit(type), false)
+        }
         return out
     }
 

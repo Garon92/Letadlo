@@ -43,7 +43,7 @@ class FlightModelTest {
     fun cruiseSpeedsAreRealistic() {
         val minKmh = mapOf(
             AircraftType.SPORT to 250f, AircraftType.FIGHTER to 2000f, AircraftType.AIRLINER to 750f,
-            AircraftType.HELICOPTER to 230f, AircraftType.BOMBER to 420f, AircraftType.AIRSHIP to 110f,
+            AircraftType.HELICOPTER to 230f, AircraftType.BOMBER to 420f, AircraftType.AIRSHIP to 110f, AircraftType.DRONE to 140f,
         )
         for (type in AircraftType.entries) {
             val f = FlightModel(World(MapType.COUNTRYSIDE), type)

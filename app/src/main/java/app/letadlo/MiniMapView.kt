@@ -85,6 +85,7 @@ class MiniMapView @JvmOverloads constructor(
         4 -> Color.rgb(90, 165, 255)
         5 -> Color.WHITE
         6 -> Color.rgb(255, 196, 64)
+        7 -> Color.rgb(255, 80, 220)
         else -> Color.argb(150, 120, 220, 255)
     }
 

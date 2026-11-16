@@ -256,6 +256,20 @@ object LifeMeshes {
         return mb.build()
     }
 
+    /** Závodní brána pro dron: čtvercový rám v rovině XY (polovina strany = 1) s nohama. Barví se v shaderu. */
+    fun gate(): MeshData {
+        val mb = MeshBuilder(128)
+        val t = 0.07f
+        mb.box(-1f - t, 1f - t, -t, 1f + t, 1f + t, t, 1f, 1f, 1f)
+        mb.box(-1f - t, -1f - t, -t, 1f + t, -1f + t, t, 1f, 1f, 1f)
+        mb.box(-1f - t, -1f + t, -t, -1f + t, 1f - t, t, 1f, 1f, 1f)
+        mb.box(1f - t, -1f + t, -t, 1f + t, 1f - t, t, 1f, 1f, 1f)
+        // tmavé nohy dolů do země
+        mb.box(-1f - t * 0.6f, -5f, -t * 0.6f, -1f + t * 0.6f, -1f - t, t * 0.6f, 0.3f, 0.3f, 0.3f)
+        mb.box(1f - t * 0.6f, -5f, -t * 0.6f, 1f + t * 0.6f, -1f - t, t * 0.6f, 0.3f, 0.3f, 0.3f)
+        return mb.build()
+    }
+
     /** Kosočtverečná značka cíle (billboard). */
     fun diamond(): MeshData {
         val mb = MeshBuilder(32)

@@ -36,6 +36,7 @@ object AircraftMeshes {
         AircraftType.HELICOPTER -> helicopter()
         AircraftType.BOMBER -> bomber()
         AircraftType.AIRSHIP -> airship(false)
+        AircraftType.DRONE -> drone()
     }
 
     /** Pirátská vzducholoď (cíl) – stejný tvar, temně rudý balon, bez svítících oken. */
@@ -48,6 +49,16 @@ object AircraftMeshes {
             RotorSpec(propeller(5.6f, 4, 0.36f, floatArrayOf(0.15f, 0.15f, 0.16f)), 0f, 2.0f, 0.1f, 'y', 1f),
             RotorSpec(propeller(0.95f, 2, 0.16f, floatArrayOf(0.15f, 0.15f, 0.16f)), 0.28f, 1.15f, 8.75f, 'x', 4.5f),
         )
+        AircraftType.DRONE -> {
+            val front = propeller(0.13f, 3, 0.036f, floatArrayOf(1f, 0.45f, 0.08f))
+            val back = propeller(0.13f, 3, 0.036f, floatArrayOf(0.15f, 0.15f, 0.16f))
+            listOf(
+                RotorSpec(front, -0.226f, 0.05f, -0.226f, 'y', 1f),
+                RotorSpec(front, 0.226f, 0.05f, -0.226f, 'y', -1f),
+                RotorSpec(back, -0.226f, 0.05f, 0.226f, 'y', -1f),
+                RotorSpec(back, 0.226f, 0.05f, 0.226f, 'y', 1f),
+            )
+        }
         AircraftType.AIRSHIP -> {
             val wood = floatArrayOf(0.5f, 0.32f, 0.17f)
             val side = propeller(2.3f, 4, 0.55f, wood)
@@ -77,6 +88,7 @@ object AircraftMeshes {
         AircraftType.BOMBER -> floatArrayOf(-0.5f, 1.75f, -6.7f)
         // vzducholoď: na přídi gondoly, co nejdál pod balonem
         AircraftType.AIRSHIP -> floatArrayOf(0f, -9.0f, -10.6f)
+        AircraftType.DRONE -> floatArrayOf(0f, 0.04f, -0.17f)
     }
 
     /**
@@ -94,6 +106,7 @@ object AircraftMeshes {
             AircraftType.HELICOPTER -> Pair(0.9f, 0.85f)
             AircraftType.BOMBER -> Pair(1.0f, 0.9f)
             AircraftType.AIRSHIP -> Pair(1.4f, 1.0f)
+            AircraftType.DRONE -> return fpvLens()
         }
         val airship = type == AircraftType.AIRSHIP
         if (airship) return helm(e)
@@ -198,6 +211,10 @@ object AircraftMeshes {
             }
             AircraftType.BOMBER -> {
                 rect(-16f, -3.5f, 16f, 1.5f); rect(-1.3f, -11.5f, 1.3f, 12f); rect(-6f, 9.5f, 6f, 12f)
+            }
+            AircraftType.DRONE -> {
+                mb.quad(-0.3f, 0f, 0.3f, -0.26f, 0f, 0.34f, 0.3f, 0f, -0.3f, 0.26f, 0f, -0.34f, 0f, 0f, 0f)
+                mb.quad(0.26f, 0f, 0.34f, 0.3f, 0f, 0.3f, -0.26f, 0f, -0.34f, -0.3f, 0f, -0.3f, 0f, 0f, 0f)
             }
             AircraftType.AIRSHIP -> {
                 rect(-5f, -24f, 5f, 26f); rect(-7.5f, -16f, 7.5f, 16f); rect(-8.3f, -6f, 8.3f, 8f)
@@ -503,6 +520,50 @@ object AircraftMeshes {
         // stožár rotoru a motor
         box(mb, -0.6f, 1.25f, -0.6f, 0.6f, 1.6f, 1.4f, floatArrayOf(0.7f, 0.12f, 0.1f))
         box(mb, -0.12f, 1.6f, -0.02f, 0.12f, 1.95f, 0.22f, DARK)
+        return mb.build()
+    }
+
+    // ------------------------------------------------------------------ FPV dron
+
+    /** Závodní kvadrokoptéra (~0,5 m): karbonový X rám, motory, kryt kamery, baterie a LED. */
+    private fun drone(): MeshData {
+        val mb = MeshBuilder(1024)
+        val carbon = floatArrayOf(0.12f, 0.12f, 0.13f)
+        val orange = floatArrayOf(1f, 0.45f, 0.08f)
+        val quarter = (PI / 4).toFloat()
+        // ramena do X
+        mb.obox(0f, -0.012f, 0f, 0.33f, 0.022f, 0.012f, quarter, carbon[0], carbon[1], carbon[2])
+        mb.obox(0f, -0.012f, 0f, 0.33f, 0.022f, 0.012f, -quarter, carbon[0], carbon[1], carbon[2])
+        // tělo a horní deska
+        mb.box(-0.06f, -0.025f, -0.12f, 0.06f, 0.012f, 0.12f, carbon[0], carbon[1], carbon[2])
+        mb.box(-0.055f, 0.012f, -0.1f, 0.055f, 0.018f, 0.1f, 0.2f, 0.2f, 0.22f)
+        // baterie s páskem
+        mb.box(-0.035f, 0.018f, -0.07f, 0.035f, 0.07f, 0.075f, 0.95f, 0.8f, 0.15f)
+        mb.box(-0.037f, 0.03f, -0.01f, 0.037f, 0.072f, 0.01f, 0.1f, 0.1f, 0.1f)
+        // kryt kamery a kamera
+        mb.hexa8(
+            -0.045f, 0.012f, -0.17f, 0.045f, 0.012f, -0.17f, 0.045f, 0.012f, -0.1f, -0.045f, 0.012f, -0.1f,
+            -0.035f, 0.06f, -0.15f, 0.035f, 0.06f, -0.15f, 0.035f, 0.06f, -0.1f, -0.035f, 0.06f, -0.1f,
+            orange[0], orange[1], orange[2],
+        )
+        mb.box(-0.022f, 0.02f, -0.185f, 0.022f, 0.06f, -0.15f, 0.05f, 0.05f, 0.06f)
+        disc(mb, 0f, 0.04f, -0.186f, 0.014f, 0.15f, 0.35f, 0.7f, 0.75f)
+        // motory
+        for (sx in floatArrayOf(-0.226f, 0.226f)) for (sz in floatArrayOf(-0.226f, 0.226f)) {
+            mb.cylinderY(sx, -0.02f, sz, 0.03f, 0.045f, 0.03f, 8, 0.25f, 0.25f, 0.27f)
+            mb.cylinderY(sx, 0.045f, sz, 0.012f, 0.055f, 0.008f, 6, orange[0], orange[1], orange[2])
+        }
+        // LED pod zadními rameny (svítí)
+        for (sx in floatArrayOf(-1f, 1f)) {
+            mb.obox(sx * 0.12f, -0.03f, 0.12f, 0.1f, 0.012f, 0.008f, if (sx > 0) -quarter else quarter, 0.2f, 0.9f, 1f, 0.7f)
+        }
+        return mb.build()
+    }
+
+    /** FPV: žádná kabina, jen tenký okraj objektivu na spodní hraně obrazu (ve hře se nekreslí). */
+    private fun fpvLens(): MeshData {
+        val mb = MeshBuilder(8)
+        mb.box(-0.02f, -0.03f, -0.2f, 0.02f, -0.025f, -0.19f, 0.05f, 0.05f, 0.05f)
         return mb.build()
     }
 

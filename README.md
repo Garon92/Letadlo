@@ -50,6 +50,7 @@ A každé letadlo má vlastní úkol (zářící značky ukazují cíle přes ce
 | 🚁 Vrtulník | záchrana zraněných ze střech mrakodrapů, horských svahů a luk → přistát u nemocnice na letišti |
 | ✈️ Dopravní | trasa přes 4 body, přistávací koridor a hodnocené přistání; pak zastaví a letí znovu |
 | ⚙️ Vzducholoď | řetězy zlatých ozubených kol (doplňují páru), pirátské vzducholodě sestřelované dělem po oblouku |
+| 🎥 FPV dron | závod neonovými branami nízko v ulicích, mezi stromy a v údolích; úseky po 10 branách na čas, salta za body |
 
 Tlačítkem **↩** nahoře se vrátíš do menu. V menu je u každé mapy rekord pro vybrané letadlo.
 
@@ -62,6 +63,7 @@ Tlačítkem **↩** nahoře se vrátíš do menu. V menu je u každé mapy rekor
 | ✈️ Dopravní | ~840 km/h, dlouhý rozjezd, pomalé zatáčky |
 | 🚁 Vrtulník | ~270 km/h, svislý vzlet, přistání kdekoli, náklon k sobě = stoupání |
 | 💣 Bombardér | ~480 km/h, čtyři vrtule, neomezené bomby |
+| 🎥 FPV dron | ~150 km/h (střemhlav ~210 km/h), otočka o 90° za necelou vteřinu, výchozí pohled z FPV kamery, tlačítko salta |
 | ⚙️ Vzducholoď | ~125 km/h (s párou ~210 km/h), steampunk: plátěný balon, dřevěná gondola, mosazná děla, svislý vzlet, přistání kdekoli |
 
 ## Mapy

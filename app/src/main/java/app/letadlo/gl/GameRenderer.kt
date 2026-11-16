@@ -125,6 +125,7 @@ class GameRenderer(
         AircraftType.HELICOPTER -> 1.3f
         AircraftType.BOMBER -> 2.3f
         AircraftType.AIRSHIP -> 3.4f
+        AircraftType.DRONE -> 0.25f
     }
 
     // šablony pohyblivých věcí (CPU)
@@ -155,6 +156,7 @@ class GameRenderer(
     private var steamTimer = 0f
     private val helipadT = LifeMeshes.helipad()
     private lateinit var ringMesh: GpuMesh
+    private lateinit var gateMesh: GpuMesh
     private lateinit var diamondMesh: GpuMesh
     private var aspect = 1.8f
     private var fov = 52f
@@ -258,6 +260,7 @@ class GameRenderer(
         decals.init()
         reticle = GpuMesh(LifeMeshes.reticle())
         ringMesh = GpuMesh(LifeMeshes.ring())
+        gateMesh = GpuMesh(LifeMeshes.gate())
         diamondMesh = GpuMesh(LifeMeshes.diamond())
         val ids = IntArray(1)
         GLES30.glGenVertexArrays(1, ids, 0)
@@ -271,9 +274,12 @@ class GameRenderer(
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
         aspect = width.toFloat() / max(1, height)
-        Matrix.perspectiveM(proj, 0, fov, aspect, 1.5f, fogEnd + 800f)
+        Matrix.perspectiveM(proj, 0, fov, aspect, nearPlane, fogEnd + 800f)
         Matrix.perspectiveM(projNear, 0, 62f, aspect, 0.05f, 120f)
     }
+
+    /** Dron létá centimetry od zdí a stromů – potřebuje bližší ořezovou rovinu. */
+    private val nearPlane = if (aircraft.drone) 0.3f else 1.5f
 
     override fun onDrawFrame(gl: GL10?) {
         val now = System.nanoTime()
@@ -317,10 +323,15 @@ class GameRenderer(
         if (aircraft.airship && flight.phase != FlightPhase.CRASHED && flight.rotorSpin > 0.3f) puffSteam(dt)
         // širší zorné pole s rychlostí – pocit rychlosti
         val speedK = ((flight.speed - 60f) / 450f).coerceIn(0f, 1f)
-        val wantFov = if (viewMode == 2) 64f else 52f + 14f * speedK
+        val wantFov = when {
+            viewMode == 2 -> 64f
+            aircraft.drone && cockpit -> 78f + 10f * (flight.speed / FlightModel.DRONE_DIVE)
+            aircraft.drone -> 58f + 8f * (flight.speed / FlightModel.DRONE_DIVE)
+            else -> 52f + 14f * speedK
+        }
         if (abs(wantFov - fov) > 0.05f) {
             fov += (wantFov - fov) * min(1f, dt * 2f)
-            Matrix.perspectiveM(proj, 0, fov, aspect, 1.5f, fogEnd + 800f)
+            Matrix.perspectiveM(proj, 0, fov, aspect, nearPlane, fogEnd + 800f)
         }
         if (combat.dirtyChunks.isNotEmpty()) {
             for (k in combat.dirtyChunks) chunks.rebuild((k shr 32).toInt(), k.toInt())
@@ -442,18 +453,26 @@ class GameRenderer(
         if (m.rescued > 0) parts += "zachráněno ${m.rescued}"
         if (m.landingsScored > 0) parts += "přistání ${m.landingsScored}"
         if (m.nearMisses > 0) parts += "těsně ${m.nearMisses}×"
+        if (m.gates > 0) parts += "brány ${m.gates}"
+        if (m.flipsScored > 0) parts += "salta ${m.flipsScored}"
         return parts.joinToString("  ·  ")
     }
 
     private fun deg(r: Float): Float = (r * 180.0 / PI).toFloat()
 
-    private fun planeModel(out: FloatArray) {
+    private fun planeModel(out: FloatArray) = bodyModel(out, droneLean())
+
+    /** Dron se při rychlém letu předkloní (kamera má náklon nahoru, takže obraz zůstane rovně). */
+    private fun droneLean(): Float =
+        if (aircraft.drone && flight.phase == FlightPhase.AIRBORNE) 0.42f * (flight.speed / FlightModel.DRONE_DIVE) else 0f
+
+    private fun bodyModel(out: FloatArray, lean: Float) {
         val f = flight
         Matrix.setIdentityM(out, 0)
         Matrix.translateM(out, 0, f.x, f.y, f.z)
         Matrix.rotateM(out, 0, -deg(f.heading), 0f, 1f, 0f)
-        Matrix.rotateM(out, 0, deg(f.pitch), 1f, 0f, 0f)
-        Matrix.rotateM(out, 0, -deg(f.bank), 0f, 0f, 1f)
+        Matrix.rotateM(out, 0, deg(f.pitch - lean), 1f, 0f, 0f)
+        Matrix.rotateM(out, 0, -deg(f.bank + f.flipRoll), 0f, 0f, 1f)
     }
 
     // ------------------------------------------------------------------ kamera
@@ -467,7 +486,8 @@ class GameRenderer(
         }
         bombLookInit = false
         if (cockpit && !crashed) {
-            planeModel(model)
+            // FPV kamera dronu je skloněná nahoru přesně o předklon → míří ve směru letu
+            bodyModel(model, 0f)
             v4b[0] = eye[0]; v4b[1] = eye[1]; v4b[2] = eye[2]; v4b[3] = 1f
             Matrix.multiplyMV(v4, 0, model, 0, v4b, 0)
             camX = v4[0]; camY = v4[1]; camZ = v4[2]
@@ -553,7 +573,7 @@ class GameRenderer(
     private fun shake(): Float {
         val f = flight
         if (f.phase != FlightPhase.AIRBORNE) return 0f
-        val fast = ((f.speed - 70f) / 450f).coerceIn(0f, 1f)
+        val fast = if (aircraft.drone) f.speed / FlightModel.DRONE_DIVE * 0.6f else ((f.speed - 70f) / 450f).coerceIn(0f, 1f)
         val low = (1f - f.altitudeAgl / 80f).coerceIn(0f, 1f)
         return 0.0035f * fast * (0.3f + 0.7f * low)
     }
@@ -886,6 +906,7 @@ class GameRenderer(
 
     /** Pohled z kabiny: vlastní letadlo a palubní deska ve zvláštním průchodu s blízkou ořezovou rovinou. */
     private fun drawCockpit(p: GlProgram) {
+        if (aircraft.drone) return
         GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
         // Vše v souřadnicích letadla: daleko od počátku světa by velká čísla
         // způsobila chvění a problikávání budíků.
@@ -932,6 +953,13 @@ class GameRenderer(
                     flatRingModel(g.x, g.y + 0.6f, g.z, g.radius * pulse)
                     if (g.kind == GoalKind.PICKUP) p.set("uTint", 0.3f, 1f, 0.4f, 0.85f) else p.set("uTint", 0.35f, 0.65f, 1f, 0.85f)
                 }
+                GoalKind.GATE -> {
+                    ringModel(g, 1f)
+                    if (g.preview) p.set("uTint", 0.3f, 0.9f, 1f, 0.5f) else p.set("uTint", 1f, 0.25f, 0.85f, 0.75f + 0.2f * sin(time * 8f))
+                    p.setMatrix("uModel", model)
+                    gateMesh.draw()
+                    continue
+                }
                 else -> continue
             }
             p.setMatrix("uModel", model)
@@ -971,6 +999,7 @@ class GameRenderer(
             if (g.kind == GoalKind.GEAR && g.order != nextGear) continue
             val my = when (g.kind) {
                 GoalKind.GEAR -> g.y + 12f
+                GoalKind.GATE -> g.y + g.radius * 2.2f
                 GoalKind.RING -> g.y + g.radius * 1.6f
                 GoalKind.GROUND_TARGET -> g.y + g.radius * 2f + 14f
                 GoalKind.AIR_TARGET -> g.y + 22f
@@ -997,6 +1026,7 @@ class GameRenderer(
                 GoalKind.DROPOFF -> p.set("uTint", 0.35f, 0.65f, 1f, 0.9f)
                 GoalKind.RUNWAY -> p.set("uTint", 1f, 1f, 1f, 0.9f)
                 GoalKind.GEAR -> p.set("uTint", 1f, 0.8f, 0.25f, 0.85f)
+                GoalKind.GATE -> p.set("uTint", 1f, 0.3f, 0.85f, 0.9f)
             }
             diamondMesh.draw()
         }

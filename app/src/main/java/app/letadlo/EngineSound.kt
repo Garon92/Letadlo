@@ -18,6 +18,7 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
     private val jet = type == AircraftType.FIGHTER || type == AircraftType.AIRLINER
     private val heli = type == AircraftType.HELICOPTER
     private val steamEngine = type == AircraftType.AIRSHIP
+    private val droneMotors = type == AircraftType.DRONE
 
     /** Vzducholoď jede na páru naplno – zapíská parní píšťala. */
     @Volatile var boosting = false
@@ -118,6 +119,10 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
         var hiss = 0.0
         var whistle = 0.0
         var chuffPhase = 0.0
+        var m1 = 0.0
+        var m2 = 0.0
+        var m3 = 0.0
+        var m4 = 0.0
         var pipe = 0.0
         var whistlePhase = 0.0
         try {
@@ -165,6 +170,18 @@ class EngineSound(private val type: AircraftType = AircraftType.SPORT) {
                         roar = roar * 0.9 + (rnd.nextDouble() - 0.5) * 0.25
                         s = 0.25 * sin(w * 9.0) + 0.15 * sin(w * 13.7) + 0.4 * sin(w)
                         out = s * vol * 0.5 + roar * vol * 2.6 + wind * windVol * 3.0
+                    } else if (droneMotors) {
+                        // čtyři rychlé motory: vysoké kvílení s mírně rozladěnými vrtulemi
+                        val f0 = 210.0 + v * 6.0
+                        m1 += f0 / rate; m2 += f0 * 1.013 / rate; m3 += f0 * 0.987 / rate; m4 += f0 * 1.021 / rate
+                        if (m1 >= 1.0) m1 -= 1.0
+                        if (m2 >= 1.0) m2 -= 1.0
+                        if (m3 >= 1.0) m3 -= 1.0
+                        if (m4 >= 1.0) m4 -= 1.0
+                        val whine = sin(twoPi * m1) + sin(twoPi * m2) + sin(twoPi * m3) + sin(twoPi * m4) +
+                            0.4 * (sin(2 * twoPi * m1) + sin(2 * twoPi * m3))
+                        roar = roar * 0.6 + (rnd.nextDouble() - 0.5) * 0.4
+                        out = (whine * 0.11 + roar * 0.5) * vol + wind * windVol * 2.5
                     } else if (steamEngine) {
                         // parní stroj: rytmické „čuch" + hluboký hukot kotle
                         chuffPhase += (1.3 + v * 0.11) / rate
