@@ -74,8 +74,9 @@ object AircraftMeshes {
         AircraftType.FIGHTER -> floatArrayOf(0f, 1.18f, -3.55f)
         AircraftType.AIRLINER -> floatArrayOf(-0.55f, 0.95f, -16.6f)
         AircraftType.HELICOPTER -> floatArrayOf(-0.45f, 0.8f, -1.6f)
-        AircraftType.BOMBER -> floatArrayOf(-0.5f, 1.55f, -6.7f)
-        AircraftType.AIRSHIP -> floatArrayOf(0f, -8.8f, -7.6f)
+        AircraftType.BOMBER -> floatArrayOf(-0.5f, 1.75f, -6.7f)
+        // vzducholoď: na přídi gondoly, co nejdál pod balonem
+        AircraftType.AIRSHIP -> floatArrayOf(0f, -9.0f, -10.6f)
     }
 
     /**
@@ -95,6 +96,7 @@ object AircraftMeshes {
             AircraftType.AIRSHIP -> Pair(1.4f, 1.0f)
         }
         val airship = type == AircraftType.AIRSHIP
+        if (airship) return helm(e)
         val pz = ez - dist
         val top = ey - dist * if (type == AircraftType.HELICOPTER) 0.62f else 0.47f
         // deska je nakloněná k pilotovi, aby budíky nebyly vidět z ostrého úhlu
@@ -120,6 +122,43 @@ object AircraftMeshes {
                 disc(mb, dx, dy, zf, 0.055f,
                     if (green) 0.25f else 0.92f, if (green) 0.85f else 0.93f, if (green) 0.45f else 0.88f, 0.75f)
             }
+        }
+        return mb.build()
+    }
+
+    /**
+     * Můstek vzducholodi: dřevěné kormidelní kolo, mosazné zábradlí a dva budíky.
+     * Všechno dole u okraje obrazovky – výhled dopředu zůstává volný.
+     */
+    private fun helm(e: FloatArray): MeshData {
+        val mb = MeshBuilder(512)
+        val ey = e[1]; val ez = e[2]
+        val wood = floatArrayOf(0.45f, 0.27f, 0.13f)
+        val brass = floatArrayOf(0.85f, 0.66f, 0.26f)
+        val wy = ey - 0.52f
+        val wz = ez - 0.62f
+        val r = 0.3f
+        val seg = 20
+        for (k in 0 until seg) {
+            val a0 = (2 * PI * k / seg).toFloat()
+            val a1 = (2 * PI * (k + 1) / seg).toFloat()
+            val c0 = kotlin.math.cos(a0); val s0 = sin(a0)
+            val c1 = kotlin.math.cos(a1); val s1 = sin(a1)
+            mb.quad(c0 * (r - 0.035f), wy + s0 * (r - 0.035f), wz, c0 * r, wy + s0 * r, wz,
+                c1 * r, wy + s1 * r, wz, c1 * (r - 0.035f), wy + s1 * (r - 0.035f), wz, wood[0], wood[1], wood[2])
+        }
+        for (k in 0 until 8) {
+            val a = (PI * k / 4 + PI / 8).toFloat()
+            mb.bladeZ(a, 0.03f, r + 0.11f, 0.035f, 0.035f, wood[0], wood[1], wood[2], wz, 0f, wy)
+        }
+        mb.box(-0.05f, wy - 0.05f, wz - 0.06f, 0.05f, wy + 0.05f, wz + 0.06f, brass[0], brass[1], brass[2])
+        mb.box(-0.04f, wy - 0.8f, wz + 0.02f, 0.04f, wy, wz + 0.1f, brass[0], brass[1], brass[2])
+        // zábradlí přes příď a budíky na něm
+        mb.box(-1.7f, ey - 0.64f, ez - 1.3f, 1.7f, ey - 0.58f, ez - 1.22f, brass[0], brass[1], brass[2])
+        for (sx in floatArrayOf(-0.8f, 0.8f)) {
+            mb.box(sx - 0.03f, ey - 0.95f, ez - 1.28f, sx + 0.03f, ey - 0.58f, ez - 1.24f, brass[0], brass[1], brass[2])
+            disc(mb, sx, ey - 0.5f, ez - 1.2f, 0.1f, brass[0], brass[1], brass[2], 1f)
+            disc(mb, sx, ey - 0.5f, ez - 1.195f, 0.08f, 0.96f, 0.92f, 0.8f, 0.75f)
         }
         return mb.build()
     }
@@ -520,14 +559,13 @@ object AircraftMeshes {
         mb.box(-2.2f, -9.35f, -8.5f, 2.2f, -7.4f, 6f, wood[0] * 0.8f, wood[1] * 0.8f, wood[2] * 0.8f, 1f, brass[0], brass[1], brass[2])
         if (!pirate) {
             for (z in floatArrayOf(-6.5f, -3.5f, -0.5f, 2.5f)) {
-                for (sx in floatArrayOf(-2.21f, 2.21f)) {
-                    val x0 = sx
-                    mb.quad(x0, -8.9f, z, x0, -8.9f, z + 1.6f, x0, -7.9f, z + 1.6f, x0, -7.9f, z, 1f, 0.78f, 0.4f, 0.7f)
-                }
+                // okna směřují ven – zevnitř kabiny jsou průhledná
+                mb.quad(-2.21f, -8.9f, z, -2.21f, -8.9f, z + 1.6f, -2.21f, -7.9f, z + 1.6f, -2.21f, -7.9f, z, 1f, 0.78f, 0.4f, 0.7f)
+                mb.quad(2.21f, -8.9f, z + 1.6f, 2.21f, -8.9f, z, 2.21f, -7.9f, z, 2.21f, -7.9f, z + 1.6f, 1f, 0.78f, 0.4f, 0.7f)
             }
         }
         // přední okno můstku
-        mb.quad(-1.8f, -9.2f, -8.51f, 1.8f, -9.2f, -8.51f, 1.8f, -7.7f, -8.51f, -1.8f, -7.7f, -8.51f, 0.2f, 0.28f, 0.34f)
+        mb.quad(1.8f, -9.2f, -8.51f, -1.8f, -9.2f, -8.51f, -1.8f, -7.7f, -8.51f, 1.8f, -7.7f, -8.51f, 0.2f, 0.28f, 0.34f)
         // vzpěry k balonu
         for (zs in floatArrayOf(-7f, 0f, 7f)) for (xs in floatArrayOf(-1.7f, 1.7f)) {
             mb.box(xs - 0.12f, -7.4f, zs - 0.12f, xs + 0.12f, -7f, zs + 0.12f, brass[0], brass[1], brass[2])
@@ -568,8 +606,8 @@ object AircraftMeshes {
         val belly = floatArrayOf(0.55f, 0.57f, 0.55f)
         val glass = floatArrayOf(0.35f, 0.48f, 0.55f)
         val st = arrayOf(
-            floatArrayOf(-11.6f, 0.3f, 0.4f, 0.1f),
-            floatArrayOf(-10.5f, 0.9f, 1.1f, 0.1f),
+            floatArrayOf(-11.6f, 0.3f, 0.4f, -0.25f),
+            floatArrayOf(-10.5f, 0.9f, 1.1f, -0.1f),
             floatArrayOf(-8.5f, 1.25f, 1.45f, 0.15f),
             floatArrayOf(5.0f, 1.25f, 1.45f, 0.15f),
             floatArrayOf(9.0f, 0.8f, 1.0f, 0.5f),

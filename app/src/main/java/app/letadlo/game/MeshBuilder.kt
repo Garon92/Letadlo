@@ -229,19 +229,22 @@ class MeshBuilder(initialVertices: Int = 256) {
     }
 
     /** List vrtule v rovině XY (osa otáčení Z), od poloměru r0 do r1 pod úhlem [angle]. */
-    fun bladeZ(angle: Float, r0: Float, r1: Float, chord: Float, thick: Float, r: Float, g: Float, b: Float, zc: Float = 0f) {
+    fun bladeZ(
+        angle: Float, r0: Float, r1: Float, chord: Float, thick: Float, r: Float, g: Float, b: Float,
+        zc: Float = 0f, ox: Float = 0f, oy: Float = 0f,
+    ) {
         val dx = cos(angle); val dy = sin(angle)
         val px = -dy; val py = dx
         val hc = chord / 2f; val ht = thick / 2f
         hexa8(
-            dx * r0 - px * hc, dy * r0 - py * hc, zc - ht,
-            dx * r1 - px * hc, dy * r1 - py * hc, zc - ht,
-            dx * r1 - px * hc, dy * r1 - py * hc, zc + ht,
-            dx * r0 - px * hc, dy * r0 - py * hc, zc + ht,
-            dx * r0 + px * hc, dy * r0 + py * hc, zc - ht,
-            dx * r1 + px * hc, dy * r1 + py * hc, zc - ht,
-            dx * r1 + px * hc, dy * r1 + py * hc, zc + ht,
-            dx * r0 + px * hc, dy * r0 + py * hc, zc + ht,
+            ox + dx * r0 - px * hc, oy + dy * r0 - py * hc, zc - ht,
+            ox + dx * r1 - px * hc, oy + dy * r1 - py * hc, zc - ht,
+            ox + dx * r1 - px * hc, oy + dy * r1 - py * hc, zc + ht,
+            ox + dx * r0 - px * hc, oy + dy * r0 - py * hc, zc + ht,
+            ox + dx * r0 + px * hc, oy + dy * r0 + py * hc, zc - ht,
+            ox + dx * r1 + px * hc, oy + dy * r1 + py * hc, zc - ht,
+            ox + dx * r1 + px * hc, oy + dy * r1 + py * hc, zc + ht,
+            ox + dx * r0 + px * hc, oy + dy * r0 + py * hc, zc + ht,
             r, g, b,
         )
     }
