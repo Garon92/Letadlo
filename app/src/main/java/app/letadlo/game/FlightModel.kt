@@ -46,6 +46,18 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         /** Dron: nejvyšší rychlost ve střemhlavém letu. */
         const val DRONE_DIVE = 58f
         const val FLIP_TIME = 0.45f
+        /** Vstup z náklonu může jít za plnou výchylku až sem. */
+        const val MAX_INPUT = 1.6f
+        /** Od tohoto vstupu se letadlo volně točí (výkrut, looping). */
+        const val FREE_START = 1.05f
+        private val TWO_PI = (2.0 * PI).toFloat()
+
+        fun wrapPi(a: Float): Float {
+            var v = a
+            while (v > PI.toFloat()) v -= TWO_PI
+            while (v < -PI.toFloat()) v += TWO_PI
+            return v
+        }
 
         fun rad(deg: Float): Float = (deg * PI / 180.0).toFloat()
     }
@@ -55,6 +67,15 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     private val maxPitchDown = rad(type.maxPitchDownDeg)
     private val maxRotatePitch = rad(12f)
     private val maxTurn = rad(type.maxTurnDeg)
+    private val sinMaxBank = sin(maxBank).coerceAtLeast(0.2f)
+    private val rollRate = rad(type.rollRateDeg)
+    private val loopRate = rad(type.loopRateDeg)
+    private var rollAcc = 0f
+    private var loopAcc = 0f
+
+    /** Dokončené výkruty a loopingy (pro body). */
+    var rolls = 0; private set
+    var loops = 0; private set
 
     var x = 0f; private set
     var y = 0f; private set
@@ -151,6 +172,10 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         flipTime = 0f
         flipRoll = 0f
         flips = 0
+        rolls = 0
+        loops = 0
+        rollAcc = 0f
+        loopAcc = 0f
     }
 
     /** Umístí letadlo rovnou do vzduchu (pro testy). */
@@ -170,8 +195,11 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
      */
     fun update(dt: Float, rollIn: Float, pitchIn: Float) {
         if (phase == FlightPhase.CRASHED || dt <= 0f) return
-        val r = rollIn.coerceIn(-1f, 1f)
-        val p = pitchIn.coerceIn(-1f, 1f)
+        val r = rollIn.coerceIn(-MAX_INPUT, MAX_INPUT)
+        val p = pitchIn.coerceIn(-MAX_INPUT, MAX_INPUT)
+        // vrtulník a vzducholoď akrobacii neumí – berou jen běžný rozsah
+        val r1 = r.coerceIn(-1f, 1f)
+        val p1 = p.coerceIn(-1f, 1f)
         totalTime += dt
         propeller += when {
             type.helicopter -> dt * 6.5f * rotorSpin
@@ -182,17 +210,17 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         if (propeller > 1000f) propeller -= 1000f
         if (type.vertical) {
             when (phase) {
-                FlightPhase.ROLLING -> updateHeliGround(dt, p)
+                FlightPhase.ROLLING -> updateHeliGround(dt, p1)
                 FlightPhase.AIRBORNE -> when {
-                    type.airship -> updateAirshipAir(dt, r, p)
+                    type.airship -> updateAirshipAir(dt, r1, p1)
                     type.drone -> updateDroneAir(dt, r, p)
-                    else -> updateHeliAir(dt, r, p)
+                    else -> updateHeliAir(dt, r1, p1)
                 }
                 FlightPhase.CRASHED -> Unit
             }
         } else {
             when (phase) {
-                FlightPhase.ROLLING -> updateGround(dt, p)
+                FlightPhase.ROLLING -> updateGround(dt, p1)
                 FlightPhase.AIRBORNE -> updateAir(dt, r, p)
                 FlightPhase.CRASHED -> Unit
             }
@@ -229,23 +257,77 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
         if (!world.onRunway(x, z)) crash(CrashReason.OFF_RUNWAY)
     }
 
+    /**
+     * Řízení náklonu a sklonu. V běžném rozsahu vstupu (±1) se letadlo drží
+     * cílového úhlu (stabilní a snadné). Za plnou výchylkou se volně točí:
+     * výkrut kolem podélné osy, looping přes hlavu (nebo dolů). Po puštění zpět
+     * do běžného rozsahu se srovná nejkratší cestou (z půl loopingu vznikne obrat).
+     */
+    private fun steer(dt: Float, r: Float, p: Float, stallLimit: Boolean) {
+        val freeRoll = abs(r) > FREE_START && rollRate > 0f
+        if (freeRoll) {
+            val k = ((abs(r) - FREE_START) / (MAX_INPUT - FREE_START)).coerceIn(0.15f, 1f)
+            val d = sign(r) * rollRate * k * dt
+            bank = wrapPi(bank + d)
+            rollAcc += abs(d)
+            if (rollAcc >= TWO_PI) {
+                rollAcc -= TWO_PI
+                rolls++
+            }
+        } else {
+            rollAcc = 0f
+        }
+
+        val pIn = if (y > type.ceiling) min(p, 1f) else p
+        val freePitch = abs(pIn) > FREE_START && loopRate > 0f
+        if (freePitch) {
+            val k = ((abs(pIn) - FREE_START) / (MAX_INPUT - FREE_START)).coerceIn(0.15f, 1f)
+            val d = sign(pIn) * loopRate * k * dt * if (pIn < 0f) 0.75f else 1f
+            pitch = wrapPi(pitch + d)
+            loopAcc += abs(d)
+            if (loopAcc >= TWO_PI) {
+                loopAcc -= TWO_PI
+                loops++
+            }
+        } else {
+            loopAcc = 0f
+            normalizeUpright()
+            val pc = pIn.coerceIn(-1f, 1f)
+            var targetPitch = if (pc >= 0f) pc * maxPitchUp else pc * maxPitchDown
+            if (y > type.ceiling) targetPitch = min(targetPitch, -rad(3f))
+            val stall = type.stallSpeed
+            if (stallLimit && speed < stall + 6f) {
+                // při malé rychlosti padá nos dolů
+                val k = ((stall + 6f - speed) / 12f).coerceIn(0f, 1f)
+                targetPitch = min(targetPitch, lerpF(targetPitch, -rad(25f), k))
+            }
+            pitch = approach(pitch, targetPitch, dt, type.pitchRate)
+        }
+
+        if (!freeRoll) {
+            val targetBank = r.coerceIn(-1f, 1f) * maxBank
+            bank = wrapPi(bank + wrapPi(targetBank - bank) * (1f - exp(-type.bankRate * dt)))
+        }
+
+        // kurz mění vodorovná složka vztlaku; vzhůru nohama se zatáčí obráceně
+        val turnSign = if (cos(pitch) >= 0f) 1f else -1f
+        heading += maxTurn * (sin(bank) / sinMaxBank) * turnSign * dt
+        wrapHeading()
+    }
+
+    /** Stejná poloha zapsaná s nosem nad/pod obzorem (|sklon| ≤ 90°) – po loopingu. */
+    private fun normalizeUpright() {
+        val half = (PI / 2).toFloat()
+        if (abs(pitch) <= half) return
+        pitch = if (pitch > 0f) PI.toFloat() - pitch else -PI.toFloat() - pitch
+        heading = wrapPi(heading + PI.toFloat())
+        bank = wrapPi(bank + PI.toFloat())
+    }
+
     private fun updateAir(dt: Float, r: Float, p: Float) {
         airTime += dt
-        bank = approach(bank, r * maxBank, dt, type.bankRate)
-
-        var targetPitch = if (p >= 0f) p * maxPitchUp else p * maxPitchDown
-        if (y > type.ceiling) targetPitch = min(targetPitch, -rad(3f))
+        steer(dt, r, p, stallLimit = true)
         val stall = type.stallSpeed
-        if (speed < stall + 6f) {
-            // při malé rychlosti padá nos dolů
-            val k = ((stall + 6f - speed) / 12f).coerceIn(0f, 1f)
-            targetPitch = min(targetPitch, lerpF(targetPitch, -rad(25f), k))
-        }
-        pitch = approach(pitch, targetPitch, dt, type.pitchRate)
-
-        // rychlost otáčení úměrná náklonu – stejně ostrá odezva při každé rychlosti
-        heading += maxTurn * (bank / maxBank) * dt
-        wrapHeading()
 
         // v zatáčce trochu víc odporu, ve stoupání ubývá rychlost, v klesání přibývá
         val bankDrag = 1f + 0.35f * abs(sin(bank))
@@ -356,12 +438,7 @@ class FlightModel(val world: World, val type: AircraftType = AircraftType.SPORT)
     private fun updateDroneAir(dt: Float, r: Float, p: Float) {
         airTime += dt
         rotorSpin = 1f
-        bank = approach(bank, r * maxBank, dt, type.bankRate)
-        var targetPitch = if (p >= 0f) p * maxPitchUp else p * maxPitchDown
-        if (y > type.ceiling) targetPitch = min(targetPitch, -rad(3f))
-        pitch = approach(pitch, targetPitch, dt, type.pitchRate)
-        heading += maxTurn * (bank / maxBank) * dt
-        wrapHeading()
+        steer(dt, r, p, stallLimit = false)
         // střemhlav zrychluje, do kopce zpomaluje; nikdy nepadá
         val targetSpeed = (type.maxSpeed - 18f * sin(pitch)).coerceIn(22f, DRONE_DIVE)
         speed = approach(speed, targetSpeed, dt, 1.6f)

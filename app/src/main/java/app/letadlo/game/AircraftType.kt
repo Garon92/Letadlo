@@ -102,6 +102,28 @@ enum class AircraftType(
     /** Svislý vzlet a přistání kdekoli (vrtulník, vzducholoď). */
     val vertical: Boolean get() = helicopter || airship || drone
 
+    /** Rychlost výkrutu (°/s) při náklonu za plnou výchylkou; 0 = akrobacii neumí. */
+    val rollRateDeg: Float
+        get() = when (this) {
+            SPORT -> 200f
+            FIGHTER -> 300f
+            AIRLINER -> 55f
+            BOMBER -> 75f
+            DRONE -> 420f
+            else -> 0f
+        }
+
+    /** Rychlost loopingu (°/s) při sklonu za plnou výchylkou; 0 = neumí. */
+    val loopRateDeg: Float
+        get() = when (this) {
+            SPORT -> 75f
+            FIGHTER -> 120f
+            AIRLINER -> 22f
+            BOMBER -> 30f
+            DRONE -> 240f
+            else -> 0f
+        }
+
     /** Cestovní rychlost (m/s). */
     val cruise: Float get() = if (vertical) maxSpeed else kotlin.math.sqrt(thrust / drag)
 

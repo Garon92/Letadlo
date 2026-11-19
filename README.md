@@ -18,6 +18,10 @@ Na telefonu povol instalaci z neznámých zdrojů a APK otevři. Vyžaduje Andro
    Vrtulník nejdřív roztočí rotor a pak vzlétá svisle.
 4. Natáčení telefonu jako volantem (nebo náklon do strany) = zatáčka.
    Horní hrana k sobě = stoupání, od sebe = klesání.
+   **Akrobacie:** když telefon nakloníš za plnou výchylku, letadlo se začne volně točit –
+   do strany výkrut, k sobě looping (od sebe looping dolů). Čím víc za hranu, tím rychleji.
+   Po povolení se samo srovná; z půl loopingu vznikne obrat o 180°. Stíhačka a dron jsou nejobratnější,
+   dopravní letadlo a bombardér to zvládnou jen pomalu, vrtulník a vzducholoď vůbec.
 5. Ťuknutím na obrazovku telefon kdykoli znovu zkalibruješ.
 6. Kulatá tlačítka vpravo dole: **✈️ / 💺** přepíná pohled zvenku a z kabiny, **☀️ / 🌙** den a noc.
    Vpravo nahoře je průhledná mapa okolí natočená ve směru letu.

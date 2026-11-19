@@ -131,13 +131,18 @@ class TiltInput(private val activity: Activity) : SensorEventListener, Controls 
         pitch = if (invertPitch) -p else p
     }
 
-    /** Malá mrtvá zóna a téměř lineární odezva – už malý náklon něco udělá. */
+    /**
+     * Malá mrtvá zóna a téměř lineární odezva – už malý náklon něco udělá.
+     * Za plnou výchylkou (až do 1,6× plného úhlu) roste výstup dál až na ±1,6:
+     * tam letadlo přejde do volné rotace (výkrut, looping).
+     */
     private fun shape(deg: Float, full: Float): Float {
         val dead = 1.2f
         val a = abs(deg)
         if (a < dead) return 0f
         val v = ((a - dead) / (full - dead)).coerceIn(0f, 1f)
-        return sign(deg) * v * (0.8f + 0.2f * v)
+        val extra = ((a - full) / (full * 0.6f)).coerceIn(0f, 1f)
+        return sign(deg) * (v * (0.8f + 0.2f * v) + extra * 0.6f)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit

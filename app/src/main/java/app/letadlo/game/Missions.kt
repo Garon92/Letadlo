@@ -147,11 +147,15 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
     private var lapGates = 0
     private var lapTime = 0f
     private var seenFlips = 0
+    private var seenLoops = 0
+    private var seenRolls = 0
+    var aerobatics = 0; private set
 
     fun reset() {
         score = 0; multiplier = 1; comboLeft = 0f
         rings = 0; targets = 0; rescued = 0; landingsScored = 0; nearMisses = 0
         gates = 0; flipsScored = 0; lapGates = 0; lapTime = 0f; seenFlips = 0
+        seenLoops = 0; seenRolls = 0; aerobatics = 0
         goals.clear(); popups.clear()
         started = false; lowAccum = 0f; lowTimer = 0f; nearCooldown = 0f; seenLandings = 0
         carrying = false; rescueTimer = 0f
@@ -182,6 +186,7 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
         updateLowFlying(dt, f)
         updateNearMiss(f)
         updateLandings(f)
+        updateAerobatics(f)
 
         for (g in goals) {
             g.age += dt
@@ -292,6 +297,21 @@ class Missions(private val world: World, val type: AircraftType, seed: Long = 5L
             nearCooldown = if (type.drone) 1.1f else 1.6f
             nearMisses++
             award(150, "Těsně!", false)
+        }
+    }
+
+    /** Body za dokončený looping a výkrut (nízko nad zemí dvojnásob). */
+    private fun updateAerobatics(f: FlightModel) {
+        val low = f.altitudeAgl < lowLimit * 1.5f
+        while (f.loops > seenLoops) {
+            seenLoops++
+            aerobatics++
+            award(if (low) 600 else 300, if (low) "Nízký looping" else "Looping", false)
+        }
+        while (f.rolls > seenRolls) {
+            seenRolls++
+            aerobatics++
+            award(if (low) 360 else 180, if (low) "Nízký výkrut" else "Výkrut", false)
         }
     }
 

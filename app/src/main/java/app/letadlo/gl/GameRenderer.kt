@@ -203,6 +203,8 @@ class GameRenderer(
     private val rot = FloatArray(16)
     private val rotT = FloatArray(16)
     private val localView = FloatArray(16)
+    private var aeroCam = 0f
+    private val bodyUp = floatArrayOf(0f, 1f, 0f)
     private var fwdX = 0f
     private var fwdZ = -1f
 
@@ -359,8 +361,8 @@ class GameRenderer(
                     hasTakenOff = flight.hasTakenOff,
                     readyForTakeoff = flight.readyForTakeoff,
                     calibrating = controls.calibrating,
-                    bankDeg = deg(flight.bank),
-                    pitchDeg = deg(flight.pitch),
+                    bankDeg = deg(displayBank()),
+                    pitchDeg = deg(displayPitch()),
                     x = flight.x,
                     z = flight.z,
                     headingDeg = deg(flight.heading),
@@ -455,10 +457,21 @@ class GameRenderer(
         if (m.nearMisses > 0) parts += "těsně ${m.nearMisses}×"
         if (m.gates > 0) parts += "brány ${m.gates}"
         if (m.flipsScored > 0) parts += "salta ${m.flipsScored}"
+        if (m.aerobatics > 0) parts += "akrobacie ${m.aerobatics}×"
         return parts.joinToString("  ·  ")
     }
 
     private fun deg(r: Float): Float = (r * 180.0 / PI).toFloat()
+
+    /** Pro umělý horizont: poloha zapsaná s nosem nad/pod obzorem (i během loopingu). */
+    private fun displayPitch(): Float {
+        val p = flight.pitch
+        val half = (PI / 2).toFloat()
+        return if (abs(p) <= half) p else if (p > 0f) PI.toFloat() - p else -PI.toFloat() - p
+    }
+
+    private fun displayBank(): Float =
+        if (abs(flight.pitch) <= (PI / 2).toFloat()) flight.bank else FlightModel.wrapPi(flight.bank + PI.toFloat())
 
     private fun planeModel(out: FloatArray) = bodyModel(out, droneLean())
 
@@ -527,16 +540,39 @@ class GameRenderer(
             ty = f.y + 14f + min(crashTime, 4f) * 5f
             lx = f.x; ly = f.y + 4f; lz = f.z
         } else {
-            val cp = cos(f.pitch * 0.6f)
-            val sp = sin(f.pitch * 0.6f)
+            // při loopingu a výkrutu kamera plynule přejde do soustavy letadla
+            val aero = max(
+                World.smoothstep(1.0f, 1.45f, abs(f.pitch)),
+                World.smoothstep(1.4f, 2.2f, abs(f.bank)),
+            )
+            aeroCam += (aero - aeroCam) * (1f - exp(-dt * 3f))
+            bodyModel(model2, 0f)
+            v4b[0] = 0f; v4b[1] = 1f; v4b[2] = 0f; v4b[3] = 0f
+            Matrix.multiplyMV(v4, 0, model2, 0, v4b, 0)
+            bodyUp[0] = v4[0]; bodyUp[1] = v4[1]; bodyUp[2] = v4[2]
+            val cpf = cos(f.pitch)
+            val fx = hx * cpf
+            val fy = sin(f.pitch)
+            val fz = hz * cpf
+            // běžně jen zmírněný sklon (kamera nezajíždí pod letadlo), v akrobacii plný směr nosu
+            var cfx = hx * cos(f.pitch * 0.6f) + (fx - hx * cos(f.pitch * 0.6f)) * aeroCam
+            var cfy = sin(f.pitch * 0.6f) + (fy - sin(f.pitch * 0.6f)) * aeroCam
+            var cfz = hz * cos(f.pitch * 0.6f) + (fz - hz * cos(f.pitch * 0.6f)) * aeroCam
+            val cl = sqrt(cfx * cfx + cfy * cfy + cfz * cfz).coerceAtLeast(1e-3f)
+            cfx /= cl; cfy /= cl; cfz /= cl
+            var ux = bodyUp[0] * aeroCam
+            var uy = 1f + (bodyUp[1] - 1f) * aeroCam
+            var uz = bodyUp[2] * aeroCam
+            val ul = sqrt(ux * ux + uy * uy + uz * uz).coerceAtLeast(1e-3f)
+            ux /= ul; uy /= ul; uz /= ul
             val back = 19f * s
-            tx = f.x - hx * back * cp
-            tz = f.z - hz * back * cp
-            ty = f.y + 5.5f * s - sp * back
+            tx = f.x - cfx * back + ux * 5.5f * s
+            ty = f.y - cfy * back + uy * 5.5f * s
+            tz = f.z - cfz * back + uz * 5.5f * s
             val ahead = 30f * s
-            lx = f.x + hx * ahead * cos(f.pitch)
-            ly = f.y + 2f * s + sin(f.pitch) * ahead
-            lz = f.z + hz * ahead * cos(f.pitch)
+            lx = f.x + fx * ahead + ux * 2f * s
+            ly = f.y + fy * ahead + uy * 2f * s
+            lz = f.z + fz * ahead + uz * 2f * s
         }
         if (!camInit) {
             offX = tx - f.x; offY = ty - f.y; offZ = tz - f.z
@@ -559,13 +595,22 @@ class GameRenderer(
             fwdX = dx / dl
             fwdZ = dz / dl
         }
-        val r = if (crashed) 0f else f.bank * 0.4f
-        val rightX = -fwdZ
-        val rightZ = fwdX
+        // kamera se naklání s letadlem (běžně ze 40 %, v akrobacii úplně) – plynule i vzhůru nohama
+        var upX = 0f
+        var upY = 1f
+        var upZ = 0f
+        if (!crashed) {
+            val k2 = 0.4f + 0.6f * aeroCam
+            upX = bodyUp[0] * k2
+            upY = 1f + (bodyUp[1] - 1f) * k2
+            upZ = bodyUp[2] * k2
+            val l2 = sqrt(upX * upX + upY * upY + upZ * upZ)
+            if (l2 < 0.05f) { upX = 0f; upY = 1f; upZ = 0f } else { upX /= l2; upY /= l2; upZ /= l2 }
+        }
         val sh = if (crashed) 0f else shake() * 30f * s
         Matrix.setLookAtM(
             view, 0, camX, camY, camZ, lx + sin(time * 37f) * sh, ly + sin(time * 29f + 1f) * sh, lz,
-            sin(r) * rightX, cos(r), sin(r) * rightZ,
+            upX, upY, upZ,
         )
     }
 
